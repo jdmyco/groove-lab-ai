@@ -1,0 +1,9 @@
+{
+  "style": "rock",
+  "meter": "4/4",
+  "tempo": {
+    "bpm": 100,
+    "beat_unit": "quarter"
+  },
+  "bars": 1
+}

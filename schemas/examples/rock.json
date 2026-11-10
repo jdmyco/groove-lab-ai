@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "style": "rock",
+  "meter": "4/4",
+  "tempo": {
+    "bpm": 100,
+    "beat_unit": "quarter"
+  },
+  "bars": 1,
+  "ticks_per_quarter": 96,
+  "events": [
+    {
+      "tick": 0,
+      "instrument": "closed_hat",
+      "velocity": 73
+    },
+    {
+      "tick": 0,
+      "instrument": "kick",
+      "velocity": 110
+    },
+    {
+      "tick": 48,
+      "instrument": "closed_hat",
+      "velocity": 65
+    },
+    {
+      "tick": 96,
+      "instrument": "closed_hat",
+      "velocity": 73
+    },
+    {
+      "tick": 96,
+      "instrument": "snare",
+      "velocity": 112
+    },
+    {
+      "tick": 144,
+      "instrument": "closed_hat",
+      "velocity": 65
+    },
+    {
+      "tick": 192,
+      "instrument": "closed_hat",
+      "velocity": 73
+    },
+    {
+      "tick": 192,
+      "instrument": "kick",
+      "velocity": 110
+    },
+    {
+      "tick": 240,
+      "instrument": "closed_hat",
+      "velocity": 65
+    },
+    {
+      "tick": 288,
+      "instrument": "closed_hat",
+      "velocity": 73
+    },
+    {
+      "tick": 288,
+      "instrument": "snare",
+      "velocity": 112
+    },
+    {
+      "tick": 336,
+      "instrument": "closed_hat",
+      "velocity": 65
+    }
+  ]
+}
