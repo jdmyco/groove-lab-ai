@@ -4,6 +4,8 @@
 
 For an MLX LM training smoke test, copy the seed file to `train.jsonl` in a scratch directory and pass that directory to `--data`. Use `--mask-prompt` to compute loss on the assistant completion. Keep the system instruction consistent across fine-tuning and inference.
 
+For Qwen3-4B, render the inference chat template with `enable_thinking=False`. This pre-fills the empty reasoning block that the training template adds before each JSON score.
+
 | Row | Style | Meter | Bars | What to listen for |
 | --- | --- | --- | --- | --- |
 | 1 | Rock | 4/4 | 1 | Straight eighths and an extra kick on the and of 3 |
