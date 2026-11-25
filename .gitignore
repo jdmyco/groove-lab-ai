@@ -5,3 +5,5 @@
 bin/
 *.test
 coverage.out
+/groove-lab-ai
+/.groove-training/

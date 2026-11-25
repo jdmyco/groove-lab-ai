@@ -1,0 +1,174 @@
+{
+  "sourceCommit": "9f04cf9a734527edfbb0a4eee1f674e45bbf71bc",
+  "license": "CC0-1.0",
+  "samples": [
+    {
+      "voice": "snare",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "snare-0-0.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl8.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "snare-0-1.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl7.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 1,
+      "roundRobin": 0,
+      "file": "snare-1-0.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl18.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 1,
+      "roundRobin": 1,
+      "file": "snare-1-1.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl17.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 2,
+      "roundRobin": 0,
+      "file": "snare-2-0.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl28.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 2,
+      "roundRobin": 1,
+      "file": "snare-2-1.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl27.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 3,
+      "roundRobin": 0,
+      "file": "snare-3-0.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl36.flac"
+    },
+    {
+      "voice": "snare",
+      "layer": 3,
+      "roundRobin": 1,
+      "file": "snare-3-1.wav",
+      "source": "Samples/mid/snare/mid_snare_center_vl35.flac"
+    },
+    {
+      "voice": "kick",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "kick-0-0.wav",
+      "source": "Samples/mid/kick/mid_kick_snon_vl3_rr1.flac"
+    },
+    {
+      "voice": "kick",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "kick-0-1.wav",
+      "source": "Samples/mid/kick/mid_kick_snon_vl3_rr2.flac"
+    },
+    {
+      "voice": "hihat.closed",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "hihat.closed-0-0.wav",
+      "source": "Samples/mid/hh/mid_hh_closed_vl3_rr1.flac"
+    },
+    {
+      "voice": "hihat.closed",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "hihat.closed-0-1.wav",
+      "source": "Samples/mid/hh/mid_hh_closed_vl3_rr2.flac"
+    },
+    {
+      "voice": "hihat.open",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "hihat.open-0-0.wav",
+      "source": "Samples/mid/hh/mid_hh_open_vl3_rr1.flac"
+    },
+    {
+      "voice": "hihat.open",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "hihat.open-0-1.wav",
+      "source": "Samples/mid/hh/mid_hh_open_vl3_rr2.flac"
+    },
+    {
+      "voice": "tom.high",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "tom.high-0-0.wav",
+      "source": "Samples/mid/htom/mid_htom_center_vl12.flac"
+    },
+    {
+      "voice": "tom.high",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "tom.high-0-1.wav",
+      "source": "Samples/mid/htom/mid_htom_center_vl11.flac"
+    },
+    {
+      "voice": "tom.low",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "tom.low-0-0.wav",
+      "source": "Samples/mid/ltom/mid_ltom_center_vl12.flac"
+    },
+    {
+      "voice": "tom.low",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "tom.low-0-1.wav",
+      "source": "Samples/mid/ltom/mid_ltom_center_vl11.flac"
+    },
+    {
+      "voice": "crash",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "crash-0-0.wav",
+      "source": "Samples/mid/crash/mid_crash_crash_vl2_rr1.flac"
+    },
+    {
+      "voice": "crash",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "crash-0-1.wav",
+      "source": "Samples/mid/crash/mid_crash_crash_vl2_rr2.flac"
+    },
+    {
+      "voice": "ride",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "ride-0-0.wav",
+      "source": "Samples/mid/ride/mid_ride_ride_vl2_rr1.flac"
+    },
+    {
+      "voice": "ride",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "ride-0-1.wav",
+      "source": "Samples/mid/ride/mid_ride_ride_vl2_rr2.flac"
+    },
+    {
+      "voice": "cowbell",
+      "layer": 0,
+      "roundRobin": 0,
+      "file": "cowbell-0-0.wav",
+      "source": "Samples/perc/mid/cowbell/Cowbell1_Normal_v2_rr1_Mid.wav"
+    },
+    {
+      "voice": "cowbell",
+      "layer": 0,
+      "roundRobin": 1,
+      "file": "cowbell-0-1.wav",
+      "source": "Samples/perc/mid/cowbell/Cowbell1_Normal_v2_rr2_Mid.wav"
+    }
+  ]
+}

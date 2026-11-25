@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <script>
+    const prefersDark = matchMedia("(prefers-color-scheme: dark)");
+    function applyTheme() { document.documentElement.dataset.theme = prefersDark.matches ? "dark" : "light"; }
+    applyTheme();
+    prefersDark.addEventListener("change", applyTheme);
+  </script>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/formkit/theme.css">
+  <title>Groove Lab</title>
+  <style>
+    [hidden] { display: none !important; }
+    h1, h2, p, dl, dd { margin: 0; }
+    a { color: var(--gl-accent); }
+    button, input, textarea, select { font: inherit; }
+    textarea:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
+      outline: 3px solid var(--gl-accent);
+      outline-offset: 3px;
+    }
+    button:disabled { opacity: .35; }
+    .app-header { max-width: 1440px; margin-inline: auto; gap: 16px; }
+    .brand { white-space: nowrap; }
+    .brand-kit { color: var(--gl-text); }
+    .header-label {
+      border-left: 1px solid var(--gl-outline); padding-left: 16px;
+      font-size: 14px; font-weight: 600; color: var(--gl-accent);
+      text-decoration: underline; text-underline-offset: 6px;
+    }
+    .download { margin-left: auto; font-size: 13px; color: var(--gl-sub); text-underline-offset: 4px; }
+    .lab-layout {
+      display: grid; gap: 18px 24px;
+      grid-template: "compose panel" auto "library panel" 1fr / minmax(0, 1fr) minmax(420px, 500px);
+      padding: 0 24px 64px;
+    }
+    .composer { grid-area: compose; min-width: 0; }
+    .composer h1, .library h2 { font-size: 26px; font-weight: 600; letter-spacing: -.8px; margin-bottom: 10px; }
+    .composer-box {
+      background: var(--gl-surface); border: 1px solid var(--gl-outline);
+      border-radius: 14px; padding: 14px; display: grid; gap: 8px;
+    }
+    .input-label { font-size: 14px; font-weight: 500; }
+    textarea, select, input[type="search"] {
+      color: inherit; background: var(--gl-bg); border: 1px solid var(--gl-outline); border-radius: 12px;
+    }
+    textarea { width: 100%; min-height: 75px; line-height: 1.5; resize: vertical; padding: 9px 12px; }
+    textarea::placeholder, input::placeholder { color: var(--gl-sub); }
+    select { padding: 8px 12px; min-height: 44px; }
+    input[type="search"] { padding: 8px 12px; min-height: 44px; width: min(100%, 246px); }
+    .action-group, .pager, .transport { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .action-group .gl-primary { padding: 0 16px; min-height: 44px; }
+    .notice { color: var(--gl-sub); font-size: 13px; line-height: 1.4; }
+    .notice:empty { display: none; }
+    .notice.error { color: var(--gl-danger-text); }
+    .library { grid-area: library; min-width: 0; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; margin-block: 8px 14px; }
+    .gl-filters { display: flex; gap: 6px; overflow-x: auto; padding: 3px; margin: -3px; scrollbar-width: thin; }
+    .gl-filters button {
+      flex: none; border: 1px solid var(--gl-outline); border-radius: 11px; min-height: 44px;
+      background: var(--gl-bg); padding: 0 12px; white-space: nowrap;
+    }
+    .gl .gl-filters button[aria-pressed="true"] {
+      border-color: var(--gl-accent); background: var(--gl-accent-soft); color: var(--gl-accent);
+    }
+    .pager { justify-content: end; }
+    .pager .gl-secondary { min-height: 37px; padding: 0 10px; font-size: 13px; }
+    .groove-row { position: relative; }
+    .groove-row .gl-row { padding-right: 86px; min-height: 69px; }
+    .family { text-transform: capitalize; }
+    .gl-row-metronome { white-space: nowrap; }
+    .groove-row .gl-row-sub { white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
+    .row-play {
+      position: absolute; inset-inline-end: 8px; top: 8px; min-height: 36px;
+      border-radius: 9px; padding-inline: 5px; background: transparent; border: 0;
+      color: var(--gl-sub) !important; font-size: 12px !important;
+    }
+    .row-play:hover, .row-play:focus-visible { color: var(--gl-accent) !important; }
+    .score-panel { grid-area: panel; min-width: 0; }
+    .score-panel .gl-song-panel-head { margin-bottom: 10px; }
+    .score-panel h2 { overflow-wrap: anywhere; }
+    .score-panel .gl-song-panel-head .score-prompt { color: var(--gl-text); line-height: 1.45; margin-top: 8px; }
+    .transport { margin-bottom: 10px; }
+    .transport .gl-primary { flex: 1; min-height: 48px; padding-inline: 16px; font-weight: 600; }
+    .play-mark { margin-right: 7px; }
+    .score-sheet {
+      min-width: 0; margin-block: 14px; padding: 6px 0;
+      background: var(--gl-bg); border: 1px solid var(--gl-outline);
+      border-radius: 12px; overflow: hidden;
+    }
+    .score-sheet .gs-scroll { min-width: 0; }
+    .metadata { border-block-start: 1px solid var(--gl-outline); }
+    .metadata > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 10px; margin-block: 10px; }
+    .metadata dt { font-size: 13px; font-weight: 600; }
+    .metadata dd { color: var(--gl-sub); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+    details { border-top: 1px solid var(--gl-outline); padding-top: 10px; color: var(--gl-sub); font-size: 13px; }
+    summary { cursor: pointer; }
+    pre { background: var(--gl-bg); padding: 12px; border-radius: 10px; max-height: 240px; overflow: auto; }
+    @media (max-width: 989px) {
+      .lab-layout { grid-template: "compose" auto "panel" auto "library" auto / minmax(0, 1fr); }
+      .score-panel { position: static; max-height: none; }
+    }
+    @media (max-width: 540px) {
+      .lab-layout { padding: 0 12px 48px; gap: 16px; }
+      .app-header { padding-inline: 12px; }
+      .header-label { display: none; }
+      .score-panel { padding: 14px 12px; }
+      .library .toolbar { display: grid; grid-template-columns: minmax(0, 1fr); }
+      input[type="search"] { width: 100%; }
+      .pager { justify-content: space-between; }
+      .gl-row-metronome { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-bop">Groove</span> <span class="brand-kit">Lab</span></div>
+    <span class="header-label">Grooves</span>
+    <a class="download" href="/training/train.jsonl" download="train.jsonl">Download training JSONL</a>
+  </header>
+  <main class="gl lab-layout">
+    <section class="composer" aria-labelledby="composer-title">
+      <h1 id="composer-title">Generate a groove</h1>
+      <form class="composer-box" id="generate">
+        <label class="input-label" for="prompt">Describe a groove</label>
+        <textarea id="prompt" required maxlength="1000" placeholder="Make me a laid-back jazz waltz with a steady ride."></textarea>
+        <div class="action-group">
+          <button class="gl-primary" type="submit">Generate groove</button>
+          <label class="input-label" for="engine">Engine</label>
+          <select id="engine">
+            <option value="procedural">Procedural</option>
+            <option value="llm">Local LLM</option>
+          </select>
+          <label class="input-label" for="target">Target</label>
+          <select id="target">
+            <option value="auto">Automatic</option>
+            <option value="new">New groove</option>
+            <option value="edit">Current groove</option>
+          </select>
+        </div>
+        <p id="generation-status" class="notice" role="status"></p>
+      </form>
+    </section>
+    <section id="score-panel" class="score-panel gl-desktop-setup" aria-label="Groove score" hidden>
+      <div class="gl-song-panel-head">
+        <div>
+          <h2 id="score-title" tabindex="-1"></h2>
+          <p id="score-summary"></p>
+          <p id="score-prompt" class="score-prompt"></p>
+        </div>
+      </div>
+      <div class="transport">
+        <button class="gl-primary" id="play" type="button"><span class="play-mark" aria-hidden="true">▶</span><span id="play-label">Play loop</span></button>
+        <button class="gl-secondary" id="stop" type="button" disabled>Stop</button>
+      </div>
+      <p id="audio-status" class="notice" role="status"></p>
+      <div id="sheet" class="score-sheet"></div>
+      <dl id="score-metadata" class="metadata" aria-label="Groove metadata"></dl>
+      <details id="raw-score">
+        <summary>Score JSON</summary>
+        <pre id="score-json"></pre>
+      </details>
+    </section>
+    <section class="library" aria-labelledby="library-title">
+      <h2 id="library-title">Groove library</h2>
+      <div id="filters" class="gl-filters" role="group" aria-label="Filter by style"></div>
+      <div class="toolbar">
+        <input id="search" type="search" aria-label="Search prompts, artists and meters" placeholder="Search grooves or artists">
+        <div class="pager" aria-label="Gallery pages">
+          <p id="gallery-status" class="notice" role="status">Loading scores…</p>
+          <button type="button" id="previous" class="gl-secondary" disabled>Previous</button>
+          <button type="button" id="next" class="gl-secondary" disabled>Next</button>
+        </div>
+      </div>
+      <div id="gallery"></div>
+    </section>
+  </main>
+  <script type="module">
+    import { createPreview } from "/assets/formkit/formkit.js";
+
+    const byId = id => document.getElementById(id);
+    const filters = byId("filters");
+    const gallery = byId("gallery");
+    const panel = byId("score-panel");
+    const play = byId("play");
+    const stop = byId("stop");
+    const audioStatus = byId("audio-status");
+    const preview = createPreview(byId("sheet"), displayTransport);
+    const pageSize = 24;
+    let pageIndex = 0;
+    let selectedStyle = "";
+    let entries = [];
+    let selected = null;
+    let transport = null;
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function styleName(style) {
+      return style === "hip_hop" ? "Hip-hop" : style[0].toUpperCase() + style.slice(1);
+    }
+
+    function scoreSummary(score) {
+      const grouping = score.grouping ? ` (${score.grouping.join("+")})` : "";
+      const beat = score.tempo.beat_unit === "dotted_quarter" ? " dotted-quarter" : "";
+      const bars = score.bars === 1 ? "1 bar" : `${score.bars} bars`;
+      return `${score.meter}${grouping} · ${score.tempo.bpm}${beat} BPM · ${bars}`;
+    }
+
+    function showScore(entry, bringIntoView = true) {
+      selected = entry;
+      const { score, prompt, tags, label } = entry;
+      const title = tags ? tags.family[0].toUpperCase() + tags.family.slice(1) : `${styleName(score.style)} groove`;
+      byId("score-title").textContent = title;
+      byId("score-summary").textContent = (label ? `${label} · ` : "") + scoreSummary(score);
+      byId("score-prompt").textContent = prompt;
+      const metadata = score.metadata ?? {};
+      const fields = [
+        ["Description", metadata.description],
+        ["Feel", metadata.feel],
+        ["Timing", metadata.timing],
+        ["Influences", tags?.influences.join(", ")],
+      ];
+      byId("score-metadata").replaceChildren(...fields.filter(([, value]) => value).map(([key, value]) => {
+        const item = element("div");
+        item.append(element("dt", "", key), element("dd", "", value));
+        return item;
+      }));
+      byId("raw-score").open = false;
+      byId("score-json").textContent = JSON.stringify(score, null, 2);
+      panel.hidden = false;
+      preview.setScore(score, title);
+      updateSelectedRows();
+      if (bringIntoView && matchMedia("(max-width: 989px)").matches) {
+        panel.scrollIntoView({block:"start"});
+        byId("score-title").focus({preventScroll:true});
+      }
+    }
+
+    function displayTransport(next) {
+      transport = next;
+      play.disabled = next.starting;
+      stop.disabled = !next.starting && next.state !== "playing" && next.state !== "paused";
+      const label = next.starting ? "Loading sounds…" : next.state === "playing" ? "Pause" : next.state === "paused" ? "Resume" : "Play loop";
+      byId("play-label").textContent = label;
+      play.querySelector(".play-mark").textContent = next.state === "playing" ? "Ⅱ" : "▶";
+      audioStatus.textContent = next.error;
+      audioStatus.classList.toggle("error", Boolean(next.error));
+    }
+
+    play.addEventListener("click", () => {
+      if (transport?.state === "playing") preview.pause();
+      else void preview.play();
+    });
+    stop.addEventListener("click", () => preview.stop());
+    window.addEventListener("pagehide", () => { if (selected) preview.stop(); });
+
+    function updateSelectedRows() {
+      for (const row of gallery.querySelectorAll(".gl-row")) {
+        const current = selected?.id === Number(row.dataset.id);
+        row.classList.toggle("current", current);
+        row.setAttribute("aria-pressed", String(current));
+      }
+    }
+
+    function renderRow(entry) {
+      const row = element("div", "groove-row");
+      const open = element("button", "gl-row");
+      open.type = "button";
+      open.dataset.id = String(entry.id);
+      const title = element("span", "gl-row-top");
+      title.append(element("strong", "family", entry.tags.family), element("span", "gl-row-metronome", scoreSummary(entry.score)));
+      open.append(title, element("span", "gl-row-sub", entry.prompt));
+      open.addEventListener("click", () => showScore(entry));
+      const listen = element("button", "row-play", "▶ Preview");
+      listen.type = "button";
+      listen.setAttribute("aria-label", `Preview ${entry.tags.family}, ${scoreSummary(entry.score)}`);
+      listen.addEventListener("click", () => {
+        showScore(entry);
+        void preview.play();
+      });
+      row.append(open, listen);
+      return row;
+    }
+
+    function filterGallery(reset = false) {
+      if (!entries.length) return;
+      if (reset) pageIndex = 0;
+      const terms = byId("search").value.trim().toLowerCase().split(/\s+/);
+      const matches = entries.filter(entry => (!selectedStyle || selectedStyle === entry.score.style)
+        && terms.every(term => entry.search.includes(term)));
+      const offset = pageIndex * pageSize;
+      gallery.replaceChildren(...matches.slice(offset, offset + pageSize).map(renderRow));
+      updateSelectedRows();
+      byId("gallery-status").textContent = matches.length
+        ? `${offset + 1}–${Math.min(offset + pageSize, matches.length)} of ${matches.length} scores`
+        : "No scores match.";
+      byId("previous").disabled = pageIndex === 0;
+      byId("next").disabled = offset + pageSize >= matches.length;
+    }
+
+    async function loadGallery() {
+      try {
+        const response = await fetch("/training/train.jsonl");
+        if (!response.ok) throw new Error("Scores could not be loaded.");
+        entries = (await response.text()).trim().split(/\r?\n/).map((line, id) => {
+          const { messages, groove: tags } = JSON.parse(line);
+          const prompt = messages[1].content;
+          const score = JSON.parse(messages[2].content);
+          return {
+            id, prompt, score, tags,
+            search: `${prompt} ${styleName(score.style)} ${scoreSummary(score)} ${tags.family} ${tags.influences.join(" ")}`.toLowerCase(),
+          };
+        });
+        const styles = ["", ...new Set(entries.map(entry => entry.score.style))];
+        for (const style of styles) {
+          const button = element("button", "", style ? styleName(style) : "All");
+          button.type = "button";
+          button.setAttribute("aria-pressed", String(style === ""));
+          button.addEventListener("click", () => {
+            selectedStyle = style;
+            for (const filter of filters.children) filter.setAttribute("aria-pressed", String(filter === button));
+            filterGallery(true);
+          });
+          filters.append(button);
+        }
+        filterGallery();
+        if (!selected) showScore(entries[0], false);
+      } catch {
+        byId("gallery-status").textContent = "Scores could not be loaded. Reload to try again.";
+      }
+    }
+
+    byId("search").addEventListener("input", () => filterGallery(true));
+    byId("previous").addEventListener("click", () => { pageIndex--; filterGallery(); });
+    byId("next").addEventListener("click", () => { pageIndex++; filterGallery(); });
+
+    byId("engine").addEventListener("change", () => {
+      byId("target").disabled = byId("engine").value !== "procedural";
+    });
+
+    byId("generate").addEventListener("submit", async event => {
+      event.preventDefault();
+      const prompt = byId("prompt").value.trim();
+      if (!prompt) return;
+      const status = byId("generation-status");
+      const engine = byId("engine").value;
+      const button = event.submitter;
+      const target = byId("target").value;
+      const followUp = /^(?:(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:make (?:it|this|sure)\b|add\b|remove\b|drop\b|(?:do not |don['’]t )?swing\b|(?:set|change) (?:it|the tempo|tempo|bpm|the count|the number)\b)|(?:bpm\s*[:=]?\s*\d|\d+\s*bpm\b))/i.test(prompt);
+      const editing = engine === "procedural" && (target === "edit" || target === "auto" && followUp && selected);
+      if (editing && !selected) {
+        status.textContent = "Open a groove to edit.";
+        status.classList.add("error");
+        return;
+      }
+      button.disabled = true;
+      status.classList.remove("error");
+      status.textContent = editing ? "Editing the current groove…" :
+        engine === "procedural" ? "Matching a groove…" : "Waiting for the local model…";
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt, engine, ...(editing ? { base_score: selected.score } : {}) }),
+        });
+        const score = await response.json();
+        if (!response.ok) throw new Error(score.error || "Generation failed.");
+        showScore({ prompt, score, label: engine === "procedural" ? "Procedural" : "Local LLM" });
+        status.textContent = "Groove ready to play.";
+      } catch (error) {
+        status.textContent = error.message;
+        status.classList.add("error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    loadGallery();
+  </script>
+</body>
+</html>
