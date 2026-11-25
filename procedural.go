@@ -37,7 +37,7 @@ type catalogGroove struct {
 }
 
 var loadCatalog = sync.OnceValues(func() ([]catalogGroove, error) {
-	catalog := make([]catalogGroove, 0, 500)
+	catalog := make([]catalogGroove, 0, bytes.Count(corpus, []byte{'\n'}))
 	for index, line := range bytes.Split(bytes.TrimSpace(corpus), []byte("\n")) {
 		var record catalogRecord
 		if err := json.Unmarshal(line, &record, json.RejectUnknownMembers(true)); err != nil {
@@ -235,7 +235,7 @@ func voiceConstraints(prompt string) (required [][]string, excluded []string) {
 			}
 			word, rest, _ := strings.Cut(remaining, " ")
 			switch word {
-			case "no", "without", "omit", "skip", "avoid":
+			case "no", "without", "omit", "skip", "avoid", "remove", "drop":
 				negative = true
 			case "or":
 				alternate = true
@@ -367,20 +367,36 @@ func chooseGroove(brief grooveBrief, catalog []catalogGroove) (Score, error) {
 	return score, validateScore(score)
 }
 
-func serveProcedural(w http.ResponseWriter, prompt string) {
-	catalog, err := loadCatalog()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "The groove catalog could not be read.")
-		return
-	}
-	brief, err := parseBrief(prompt)
+func serveProcedural(w http.ResponseWriter, prompt string, base *Score) {
+	edits, seed := parseEdits(prompt)
+	brief, err := parseBrief(seed)
+	var score Score
 	if err == nil {
-		var score Score
-		score, err = chooseGroove(brief, catalog)
-		if err == nil {
-			writeJSON(w, http.StatusOK, score)
-			return
+		if base != nil {
+			if brief.fourOnFloor && !phraseIn(brief.text, "disco") {
+				if brief.style == "disco" {
+					brief.style = ""
+				}
+			}
+			err = validateScore(*base)
+			if err == nil {
+				score, err = editGroove(*base, brief, edits)
+			}
+		} else {
+			catalog, loadErr := loadCatalog()
+			if loadErr != nil {
+				writeError(w, http.StatusInternalServerError, "The groove catalog could not be read.")
+				return
+			}
+			score, err = chooseGroove(brief, catalog)
+			if err == nil && (len(edits.hits) > 0 || edits.swing != 0) {
+				score, err = editGroove(score, brief, edits)
+			}
 		}
 	}
-	writeError(w, http.StatusUnprocessableEntity, err.Error())
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, score)
 }

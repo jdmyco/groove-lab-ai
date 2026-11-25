@@ -134,6 +134,12 @@
             <option value="procedural">Procedural</option>
             <option value="llm">Local LLM</option>
           </select>
+          <label class="input-label" for="target">Target</label>
+          <select id="target">
+            <option value="auto">Automatic</option>
+            <option value="new">New groove</option>
+            <option value="edit">Current groove</option>
+          </select>
         </div>
         <p id="generation-status" class="notice" role="status"></p>
       </form>
@@ -336,6 +342,10 @@
     byId("previous").addEventListener("click", () => { pageIndex--; filterGallery(); });
     byId("next").addEventListener("click", () => { pageIndex++; filterGallery(); });
 
+    byId("engine").addEventListener("change", () => {
+      byId("target").disabled = byId("engine").value !== "procedural";
+    });
+
     byId("generate").addEventListener("submit", async event => {
       event.preventDefault();
       const prompt = byId("prompt").value.trim();
@@ -343,14 +353,23 @@
       const status = byId("generation-status");
       const engine = byId("engine").value;
       const button = event.submitter;
+      const target = byId("target").value;
+      const followUp = /^(?:(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:make (?:it|this|sure)\b|add\b|remove\b|drop\b|(?:do not |don['’]t )?swing\b|(?:set|change) (?:it|the tempo|tempo|bpm)\b)|(?:bpm\s*[:=]?\s*\d|\d+\s*bpm\b))/i.test(prompt);
+      const editing = engine === "procedural" && (target === "edit" || target === "auto" && followUp && selected);
+      if (editing && !selected) {
+        status.textContent = "Open a groove to edit.";
+        status.classList.add("error");
+        return;
+      }
       button.disabled = true;
       status.classList.remove("error");
-      status.textContent = engine === "procedural" ? "Matching a groove…" : "Waiting for the local model…";
+      status.textContent = editing ? "Editing the current groove…" :
+        engine === "procedural" ? "Matching a groove…" : "Waiting for the local model…";
       try {
         const response = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt, engine }),
+          body: JSON.stringify({ prompt, engine, ...(editing ? { base_score: selected.score } : {}) }),
         });
         const score = await response.json();
         if (!response.ok) throw new Error(score.error || "Generation failed.");

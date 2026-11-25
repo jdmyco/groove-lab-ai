@@ -123,8 +123,8 @@ func TestTrainingCorpus(t *testing.T) {
 		t.Fatal("gallery corpus route did not return JSONL")
 	}
 	rows := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
-	if len(rows) != 500 {
-		t.Fatalf("found %d rows, want 500", len(rows))
+	if len(rows) != 1000 {
+		t.Fatalf("found %d rows, want 1000", len(rows))
 	}
 
 	prompts := make(map[string]bool)
@@ -222,8 +222,8 @@ func TestTrainingCorpus(t *testing.T) {
 		meterCounts[score.Meter] = true
 		lengths[score.Bars] = true
 	}
-	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 28 {
-		t.Error("corpus should cover ten styles, seven meters, four bar counts and 28 groove families")
+	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 53 {
+		t.Error("corpus should cover ten styles, seven meters, four bar counts and 53 groove families")
 	}
 }
 
@@ -440,5 +440,122 @@ func TestEmbeddedFormKitKit(t *testing.T) {
 		if len(body) <= 44 || string(body[:4]) != "RIFF" || string(body[8:12]) != "WAVE" {
 			t.Fatalf("missing WAV audio for %s", sample.File)
 		}
+	}
+}
+
+func TestProceduralFollowUps(t *testing.T) {
+	handler := newHandler(modelClient{})
+	base := generateRequest(handler, `{"engine":"procedural","prompt":"One bar of straight rock at 112 BPM"}`)
+	if base.Code != 200 {
+		t.Fatal(base.Body.String())
+	}
+	for _, tc := range []struct {
+		prompt string
+		bpm    int
+		hits   map[string][]int
+	}{
+		{"Make it 200 bpm", 200, nil},
+		{"Make sure there's a crash on the 3", 112, map[string][]int{"crash": {192}}},
+		{"Make sure there's a bass drum on 1, 2, 3 and 4", 112, map[string][]int{"kick": {0, 96, 192, 288}}},
+		{"Make it swung", 112, map[string][]int{"closed_hat": {64}}},
+		{"Add a doublestroke on the downbeat", 112, map[string][]int{"snare": {0, 24}}},
+	} {
+		body, _ := json.Marshal(map[string]any{"engine": "procedural", "prompt": tc.prompt, "base_score": json.RawMessage(base.Body.Bytes())})
+		result := generateRequest(handler, string(body))
+		score, err := parseScore(result.Body.Bytes())
+		if result.Code != 200 || err != nil || score.Style != "rock" || score.Tempo.BPM != tc.bpm {
+			t.Errorf("%s: HTTP %d %s", tc.prompt, result.Code, result.Body)
+			continue
+		}
+		for voice, ticks := range tc.hits {
+			for _, tick := range ticks {
+				if !slices.ContainsFunc(score.Events, func(event Event) bool {
+					return event.Instrument == voice && *event.Tick == tick
+				}) {
+					t.Errorf("%s: missing %s at tick %d", tc.prompt, voice, tick)
+				}
+			}
+		}
+	}
+}
+
+func TestProceduralCompoundsAndNegation(t *testing.T) {
+	handler := newHandler(modelClient{})
+	rock := generateRequest(handler, `{"engine":"procedural","prompt":"One bar of straight rock at 112 BPM"}`)
+	jazz := generateRequest(handler, `{"engine":"procedural","prompt":"One bar of small-group swing jazz with ride"}`)
+	for _, tc := range []struct {
+		prompt    string
+		base      *httptest.ResponseRecorder
+		required  map[string][]int
+		forbidden map[string][]int
+	}{
+		{"Do not add a crash on beat three", rock, nil, map[string][]int{"crash": {-1}}},
+		{"Avoid crash on beat 3", rock, nil, map[string][]int{"crash": {-1}}},
+		{"Do not add any crash on 3", rock, nil, map[string][]int{"crash": {-1}}},
+		{"Remove hi-hat on beat three", rock, map[string][]int{"closed_hat": {0}}, map[string][]int{"closed_hat": {192}}},
+		{"Add an open hi-hat on three", rock, map[string][]int{"open_hat": {192}}, map[string][]int{"closed_hat": {192}}},
+		{"Add a crash on the third beat", rock, map[string][]int{"crash": {192}}, nil},
+		{"Do not swing the groove", rock, nil, map[string][]int{"closed_hat": {64}}},
+		{"No double strokes on the downbeat", rock, nil, map[string][]int{"snare": {0, 24}}},
+		{"Add a crash on beat three and remove closed hats", rock, map[string][]int{"crash": {192}}, map[string][]int{"closed_hat": {-1}}},
+		{"Add a double stroke on beat two and remove the snare on beat two", rock, map[string][]int{"snare": {120}}, map[string][]int{"snare": {96}}},
+		{"Add a crash on beat 3 and beat 4", rock, map[string][]int{"crash": {192, 288}}, nil},
+		{"Make it lightly swung", jazz, map[string][]int{"ride": {152}}, map[string][]int{"ride": {160}}},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{"engine": "procedural", "prompt": tc.prompt, "base_score": json.RawMessage(tc.base.Body.Bytes())})
+			response := generateRequest(handler, string(body))
+			score, err := parseScore(response.Body.Bytes())
+			if response.Code != 200 || err != nil {
+				t.Fatalf("HTTP %d %s", response.Code, response.Body)
+			}
+			has := func(voice string, tick int) bool {
+				return slices.ContainsFunc(score.Events, func(event Event) bool {
+					return event.Instrument == voice && (tick == -1 || *event.Tick == tick)
+				})
+			}
+			for voice, ticks := range tc.required {
+				for _, tick := range ticks {
+					if !has(voice, tick) {
+						t.Errorf("missing %s at %d", voice, tick)
+					}
+				}
+			}
+			for voice, ticks := range tc.forbidden {
+				for _, tick := range ticks {
+					if has(voice, tick) {
+						t.Errorf("unexpected %s at %d", voice, tick)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestProceduralComposesEditsOnNewGrooves(t *testing.T) {
+	handler := newHandler(modelClient{})
+	response := generateRequest(handler, `{"engine":"procedural","prompt":"Two bars of straight rock at 200 bpm, add a crash on beat 3 and a bass drum on 1, 2, 3 and 4, and make it swung"}`)
+	score, err := parseScore(response.Body.Bytes())
+	if response.Code != 200 || err != nil || score.Bars != 2 || score.Tempo.BPM != 200 {
+		t.Fatalf("HTTP %d: %s", response.Code, response.Body)
+	}
+	for bar := range score.Bars {
+		for step := range 4 {
+			tick := bar*384 + step*96
+			if !slices.ContainsFunc(score.Events, func(event Event) bool {
+				return event.Instrument == "kick" && *event.Tick == tick
+			}) {
+				t.Errorf("missing kick at %d", tick)
+			}
+		}
+		tick := bar*384 + 192
+		if !slices.ContainsFunc(score.Events, func(event Event) bool {
+			return event.Instrument == "crash" && *event.Tick == tick
+		}) {
+			t.Errorf("missing crash at %d", tick)
+		}
+	}
+	if score.Metadata == nil || score.Metadata.Feel != "Swung eighths" {
+		t.Error("missing swing feel after compound edits")
 	}
 }

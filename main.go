@@ -114,7 +114,7 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnsupportedMediaType, "Send the prompt as application/json.")
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8<<10))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -125,8 +125,9 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Prompt string `json:"prompt"`
-		Engine string `json:"engine"`
+		Prompt    string `json:"prompt"`
+		Engine    string `json:"engine"`
+		BaseScore *Score `json:"base_score"`
 	}
 	if err := json.Unmarshal(body, &request, json.RejectUnknownMembers(true)); err != nil {
 		writeError(w, http.StatusBadRequest, "Send an object with a prompt string.")
@@ -140,9 +141,13 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 	switch request.Engine {
 	case "procedural":
-		serveProcedural(w, prompt)
+		serveProcedural(w, prompt, request.BaseScore)
 		return
 	case "", "llm":
+		if request.BaseScore != nil {
+			writeError(w, http.StatusBadRequest, "Editing a base score requires the procedural engine.")
+			return
+		}
 	default:
 		writeError(w, http.StatusBadRequest, "Choose the procedural or llm engine.")
 		return

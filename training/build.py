@@ -3,6 +3,8 @@ from collections import Counter
 import json
 from pathlib import Path
 
+from expansion import add_families
+
 ROOT = Path(__file__).resolve().parent
 SYSTEM = (ROOT / "system-prompt.txt").read_text().strip()
 VOICES = {
@@ -12,11 +14,12 @@ VOICES = {
     "v": ("clave", 70), "z": ("shaker", 57), "t": ("tom_high", 82),
     "m": ("tom_mid", 81), "l": ("tom_low", 86),
 }
+KEEPERS = {'ride', 'closed_hat', 'open_hat', 'cowbell', 'clave', 'shaker'}
 rows = []
 patterns = set()
 
 
-def read_cell(cell, bar, unit, index, accents, lag, style):
+def read_cell(cell, bar, unit, index, accents, lag, style, light_offbeat, soft_kicks):
     for part in cell.split(";"):
         if not part.strip():
             continue
@@ -31,6 +34,10 @@ def read_cell(cell, bar, unit, index, accents, lag, style):
             level = base + (12 if accent else 0) + (2, -6, 1, -9, -2)[(position + index) % 5]
             if symbol == "k" and style == "jazz":
                 level -= 48
+            elif symbol == "k" and soft_kicks:
+                level -= 22
+            if voice in KEEPERS and tick % 96 == light_offbeat:
+                level -= 24
             event = dict(tick=bar + tick, instrument=voice, velocity=level)
             if displacement:
                 event["offset"] = displacement
@@ -43,7 +50,8 @@ def phrase(cell, bar_index):
 
 
 def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
-           hands="", artists=(), grouping=(), unit=24, lag=0, phrase_bars=1, variants=4):
+           hands="", artists=(), grouping=(), unit=24, lag=0, phrase_bars=1, variants=4,
+           light_offbeat=None, soft_kicks=False):
     """Combine four authored timekeepers and five authored kick/hand responses."""
     num, denom = map(int, meter.split("/"))
     bar_ticks = num * 384 // denom
@@ -72,9 +80,18 @@ def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
             for bar in range(bars):
                 for cell in (phrase(timekeeper, bar), phrase(response, bar), phrase(hands, bar)):
                     events.extend(read_cell(cell, bar * bar_ticks, unit, response_index,
-                                            count, lag, style))
+                                            count, lag, style, light_offbeat, soft_kicks))
             events.sort(key=lambda e: (e["tick"], e["instrument"]))
             audit(events, name, bar_ticks, bars, bpm, beat_unit, count)
+            if light_offbeat is not None:
+                top_velocities = {e["tick"]: e["velocity"] for e in events if e["instrument"] in KEEPERS}
+                for tick, velocity in top_velocities.items():
+                    if tick % 96 == light_offbeat:
+                        assert velocity < top_velocities.get(tick - light_offbeat, 127), (name, tick)
+            if soft_kicks:
+                kicks = [e["velocity"] for e in events if e["instrument"] == "kick"]
+                backbeats = [e["velocity"] for e in events if e["instrument"] == "snare" and e["velocity"] > 55]
+                assert max(kicks) < min(backbeats), name
 
             # Compare the underlying pulse, ignoring dynamics, tempo and exact-repeat padding.
             keys = tuple((e["tick"], e["instrument"]) for e in events if e["tick"] < bar_ticks * phrase_bars)
@@ -105,7 +122,7 @@ def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
             score["metadata"] = {
                 "description": f"A looping {name} groove with {color}. {hook}",
                 "feel": feel,
-                "timing": timing_description(style, meter, unit, grouping, lag),
+                "timing": timing_description(style, meter, unit, grouping, lag, events),
             }
             rows.append({
                 "messages": [
@@ -120,7 +137,7 @@ def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
             })
 
 
-def timing_description(style, meter, unit, grouping, lag):
+def timing_description(style, meter, unit, grouping, lag, events):
     if style == "hip_hop":
         return "Dilla-inspired pocket with uneven hat offsets and a late snare backbeat."
     if meter in ("6/8", "12/8"):
@@ -128,7 +145,12 @@ def timing_description(style, meter, unit, grouping, lag):
     group_text = "+".join(map(str, grouping))
     if unit == 32:
         pulse = f" Accent the {group_text} groups." if grouping else ""
-        return "Written triplet subdivisions give the offbeats a long-short swing." + pulse
+        top = [e["tick"] for e in events if e["instrument"] in KEEPERS]
+        if any(tick % 96 == 64 for tick in top):
+            return "Written triplet subdivisions give the offbeats a long-short swing." + pulse
+        if all(tick % 96 == 0 for tick in top):
+            return "Quarter-note timekeeping over a triplet grid for the drum replies." + pulse
+        return "Triplet-grid timekeeping and drum replies." + pulse
     if grouping:
         return f"Straight subdivisions with accents grouped {group_text}."
     if lag:
@@ -150,14 +172,14 @@ def audit(events, name, bar_ticks, bars, bpm, beat_unit, accents):
         bucket = sounding.setdefault(tick, [])
         assert voice not in bucket, (name, e)
         bucket.append(voice)
-    keepers = {"ride", "closed_hat", "open_hat", "cowbell", "clave", "shaker"}
+
     for tick, voices in sounding.items():
         assert len(set(voices) - {"kick", "foot_hat"}) <= 2, (name, tick, voices)
-        assert len(set(voices) & keepers) <= 1, (name, tick, voices)
+        assert len(set(voices) & KEEPERS) <= 1, (name, tick, voices)
         assert not {"open_hat", "foot_hat"} <= set(voices), (name, tick, voices)
     for bar in range(bars):
         hits = [e for e in events if bar * bar_ticks <= e["tick"] < (bar + 1) * bar_ticks]
-        pulse = [e for e in hits if e["instrument"] in keepers]
+        pulse = [e for e in hits if e["instrument"] in KEEPERS]
         assert pulse and pulse[-1]["tick"] >= (bar + 1) * bar_ticks - 144, name
         toms = [e["tick"] for e in hits if e["instrument"].startswith("tom_")]
         if toms:
@@ -309,7 +331,7 @@ family("bossa nova", "latin", "4/4", 124, "straight bossa",
        hands="x:0 5 9 14|x:2 6 11 14", phrase_bars=2)
 
 family("samba-jazz", "latin", "4/4", 138, "samba push",
-       "Keep the low drum driving into each beat and let the snare answer across it.",
+       "Drive the pulse with bass drum anticipations and let the snare answer across it.",
        (("a light eighth-note ride","r:0 2 4 6 8 10 12 14"),("a shaker keeping eighths","z:0 2 4 6 8 10 12 14"),
             ("a broken ride pattern","r:0 3 4 6 8 11 12 14"),("tight hats on the offbeats","h:2 6 10 14")),
        ("k:0 3 4 7 8 11 12 15;g:1 6 10 13", "k:0 3 4 8 11 12 15;g:2 5 9 14",
@@ -327,13 +349,13 @@ family("half-time soul", "soul", "4/4", 88, "half time",
 family("laid-back neo-soul", "soul", "4/4", 84, "late pocket",
        "Sit just behind two and four, with low snare ghosts and deep kick space.",
        (("short hat notes in pairs","h:0 1 4 5 8 9 12 13"),("a steady eighth-note hat","h:0 2 4 6 8 10 12 14"),
-            ("a shaker with small gaps","z:0 2 4 7 8 10 12 15"),("soft ride on the odd eighths","r:0 2 4 6 8 10 12 14")),
+            ("a shaker with small gaps","z:0 2 4 7 8 10 12 15"),("soft eighth-note ride","r:0 2 4 6 8 10 12 14")),
        ("k:0 5 8 11", "k:0 3 8 13", "k:0 2 7 9 14", "k:0 5 10 14", "k:0 3 6 10 15"),
        hands="s:4 12;g:2 7 10", lag=4)
 
 family("disco", "disco", "4/4", 121, "four on the floor",
        "Keep the kick on all four beats and the snare locked to two and four.",
-       (("an open hat on every and","o:2 6 10 14"),("eighth-note hat strokes and open offbeats","h:0 4 8 12;o:2 6 10 14"),
+       (("an open hat on every and","o:2 6 10 14"),("closed hats on the beat and open hats on the offbeats","h:0 4 8 12;o:2 6 10 14"),
             ("a tight open-close hat pattern","h:0 3 4 7 8 11 12 15;o:2 6 10 14"),
             ("two open-hat accents","h:0 2 4 8 10 12;o:6 14")),
        ("k:0 4 8 12", "k:0 4 8 12;g:3 11", "k:0 4 8 12;g:7 15", "k:0 4 8 12;g:2 10", "k:0 4 8 12;g:5 13"),
@@ -380,7 +402,9 @@ family("long-short-short fusion", "fusion", "7/8", 114, "three plus two plus two
        ("k:0 6 10", "k:0 4 6 10 12", "k:0 3 6 9 10", "k:0 2 6 8 10 13", "k:0 5 6 10 12"),
        hands="s:4 8 12;l:2 7", grouping=(3,2,2), artists=("Gavin Harrison",), variants=2)
 
-assert len(rows) == 500
+add_families(family)
+
+assert len(rows) == 1000
 assert len({row["messages"][1]["content"] for row in rows}) == len(rows)
 (ROOT / "train.jsonl").write_text("".join(
     json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows
