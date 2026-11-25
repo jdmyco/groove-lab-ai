@@ -54,7 +54,7 @@ def add_families(family):
            (("broken sixteenth-note hats", "h:0 1 2 4 5 6 8 9 10 12 13 14"),
             ("a back-and-forth shaker", "z:0 1 4 6 8 9 12 14"),
             ("offbeat ride accents", "r:2* 5 6* 10* 13 14*"),
-            ("one open hat near the loop seam", "h:0 1 2 4 6 8 9 10 12;o:14")),
+            ("an open hat near the end of each bar", "h:0 1 2 4 6 8 9 10 12;o:14")),
            ("k:0 3 8 15", "k:0 2 6 9 13", "k:0 5 7 11 14",
             "k:0 1 5 8 10", "k:0 3 6 9 14"), hands="s:4 12;g:3 7 11 15", lag=3)
 

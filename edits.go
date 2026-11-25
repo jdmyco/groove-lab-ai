@@ -42,6 +42,16 @@ func drumVoiceNames() string {
 	return strings.Join(names, "|")
 }
 
+func resolveVoice(name string) string {
+	name = strings.Join(strings.Fields(strings.ReplaceAll(strings.ToLower(name), "-", " ")), " ")
+	for _, group := range voiceTerms {
+		if slices.Contains(group[1:], name) {
+			return group[0]
+		}
+	}
+	return "snare" // An unnamed double stroke defaults to snare.
+}
+
 func parseEdits(prompt string) (grooveEdits, string) {
 	var edits grooveEdits
 	prompt = strings.ReplaceAll(strings.ToLower(prompt), "’", "'")
@@ -54,16 +64,8 @@ func parseEdits(prompt string) (grooveEdits, string) {
 	for _, re := range []*regexp.Regexp{drumPosition, strokePosition} {
 		for _, span := range re.FindAllStringIndex(prompt, -1) {
 			match := re.FindStringSubmatch(prompt[span[0]:span[1]])
-			voice := "snare"
-			name := strings.Join(strings.Fields(strings.ReplaceAll(match[2], "-", " ")), " ")
-			for _, group := range voiceTerms {
-				if slices.Contains(group[1:], name) {
-					voice = group[0]
-					break
-				}
-			}
 			placed = append(placed, positioned{span[0], hitEdit{
-				voice: voice, beats: editBeats(match[3]), remove: match[1] != "", double: re == strokePosition,
+				voice: resolveVoice(match[2]), beats: editBeats(match[3]), remove: match[1] != "", double: re == strokePosition,
 				preserve: match[1] != "" && phraseIn(normalized(match[0]), match[1]+" add"),
 			}})
 			for i := span[0]; i < span[1]; i++ {
@@ -129,13 +131,14 @@ func editGroove(score Score, brief grooveBrief, edits grooveEdits) (Score, error
 		}
 		edits.hits = append(edits.hits, hitEdit{voice: "kick", beats: []int{1, 2, 3, 4}})
 	}
-	if brief.bpm == 0 && len(edits.hits) == 0 && edits.swing == 0 && len(brief.excluded) == 0 {
-		return Score{}, errors.New("describe a tempo, swing change, or instrument hit on a beat to edit the selected groove")
+	if brief.bpm == 0 && len(edits.hits) == 0 && edits.swing == 0 && len(brief.excluded) == 0 && len(brief.counts) == 0 {
+		return Score{}, errors.New("describe a tempo, swing change, hit placement, or exact hit count to edit the selected groove")
 	}
 	score.Tempo = retime(brief, score.Tempo)
 	original := slices.Clone(score.Events)
 	var notes []string
 	var required []Event
+	var blocked []hitPlacement
 	for _, voice := range brief.excluded {
 		original = slices.DeleteFunc(original, func(event Event) bool { return matchesVoice(event, voice) })
 		notes = append(notes, "Removed "+strings.ReplaceAll(voice, "_", " "))
@@ -196,6 +199,7 @@ func editGroove(score Score, brief grooveBrief, edits grooveEdits) (Score, error
 					if edit.double {
 						tick += spacing
 					}
+					blocked = append(blocked, hitPlacement{tick, edit.voice})
 					clear := func(e Event) bool { return *e.Tick == tick && matchesVoice(e, edit.voice) }
 					original = slices.DeleteFunc(original, clear)
 					required = slices.DeleteFunc(required, clear)
@@ -235,11 +239,18 @@ func editGroove(score Score, brief grooveBrief, edits grooveEdits) (Score, error
 	key := func(event Event) string { return fmt.Sprintf("%d/%s", *event.Tick, event.Instrument) }
 	occupied := make(map[string]bool)
 	score.Events = make([]Event, 0, min(256, len(original)+len(required)))
+	fixed := make(map[string]int)
 	for _, event := range required {
-		if !occupied[key(event)] {
-			score.Events = append(score.Events, event)
-			occupied[key(event)] = true
+		onset := key(event)
+		if index, exists := fixed[onset]; exists {
+			if matchesVoice(event, "ghost") {
+				score.Events[index] = event
+			}
+			continue
 		}
+		fixed[onset] = len(score.Events)
+		score.Events = append(score.Events, event)
+		occupied[onset] = true
 	}
 	if len(required) > 0 {
 		if err := validateScore(score); err != nil {
@@ -270,6 +281,18 @@ func editGroove(score Score, brief grooveBrief, edits grooveEdits) (Score, error
 			occupied[key(event)] = true
 		}
 	}
+	if len(brief.counts) > 0 {
+		if err := applyHitCounts(&score, brief.counts, required, blocked, brief.excluded, brief.required); err != nil {
+			return Score{}, err
+		}
+		for _, count := range brief.counts {
+			scope := " in the loop"
+			if count.perBar {
+				scope = " per bar"
+			}
+			notes = append(notes, countText(count.voice, count.total)+scope)
+		}
+	}
 	slices.SortFunc(score.Events, func(a, b Event) int {
 		if order := cmp.Compare(*a.Tick, *b.Tick); order != 0 {
 			return order
@@ -292,8 +315,13 @@ func editGroove(score Score, brief grooveBrief, edits grooveEdits) (Score, error
 		}
 	}
 	if len(notes) > 0 || trimmed > 0 {
+		previous := score.Metadata
 		score.Metadata = nil
 		describeScore(&score)
+		if len(brief.counts) > 0 && previous != nil && edits.swing == 0 {
+			score.Metadata.Feel = previous.Feel
+			score.Metadata.Timing = previous.Timing
+		}
 		if len(notes) > 0 {
 			score.Metadata.Description = strings.Join(notes, ". ") + "."
 		}

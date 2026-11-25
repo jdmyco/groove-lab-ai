@@ -3,6 +3,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
+from counted import add_counted_examples, count_line, counted_events
 from expansion import add_families
 
 ROOT = Path(__file__).resolve().parent
@@ -12,9 +13,9 @@ VOICES = {
     "x": ("rim", 83), "h": ("closed_hat", 64), "o": ("open_hat", 76),
     "p": ("foot_hat", 48), "r": ("ride", 68), "c": ("cowbell", 67),
     "v": ("clave", 70), "z": ("shaker", 57), "t": ("tom_high", 82),
-    "m": ("tom_mid", 81), "l": ("tom_low", 86),
+    "m": ("tom_mid", 81), "l": ("tom_low", 86), "a": ("crash", 103),
 }
-KEEPERS = {'ride', 'closed_hat', 'open_hat', 'cowbell', 'clave', 'shaker'}
+KEEPERS = {'ride', 'closed_hat', 'open_hat', 'cowbell', 'clave', 'shaker', 'crash'}
 rows = []
 patterns = set()
 
@@ -198,6 +199,59 @@ def audit(events, name, bar_ticks, bars, bpm, beat_unit, accents):
                 hand = hand_clock.index(min(hand_clock))
                 assert ms - hand_clock[hand] >= 48, (name, bpm, tick, voices)
                 hand_clock[hand] = ms
+
+
+def counted_family(name, style, meter, bpm, feel, unit, grouping, lag, character, cells, metrics, variant):
+    num, denom = map(int, meter.split("/"))
+    bar_ticks = num * 384 // denom
+    bars = len(cells)
+    accents = [sum(grouping[:i]) * 384 // denom for i in range(len(grouping))]
+    beat_unit = "dotted_quarter" if meter in ("6/8", "12/8") else "quarter"
+    events = sorted(
+        (e for bar, cell in enumerate(cells) for e in
+         read_cell(cell, bar * bar_ticks, unit, variant, accents, lag, style, None, False)),
+        key=lambda e: (e["tick"], e["instrument"]),
+    )
+    audit(events, name, bar_ticks, bars, bpm, beat_unit, accents)
+    cycle = bars
+    for size in range(1, bars):
+        if bars % size == 0 and all(cells[i] == cells[i % size] for i in range(bars)):
+            cycle = size
+            break
+    keys = tuple((e["tick"], e["instrument"]) for e in events if e["tick"] < bar_ticks * cycle)
+    assert (meter, keys) not in patterns, (name, variant)
+    patterns.add((meter, keys))
+    counts = count_line(counted_events(events, metrics, bar_ticks, bars), variant)
+    groups = " grouped " + "+".join(map(str, grouping)) if grouping else ""
+    pulse = " dotted-quarter" if beat_unit == "dotted_quarter" else ""
+    length = ("", "one bar", "two bars", "three bars", "four bars")[bars]
+    specification = f"{meter}{groups} at {bpm}{pulse} BPM"
+    prompts = (
+        f"Give me {length} of {name} in {specification} with exactly {counts}. Keep it looping.",
+        f"Make a {name} practice groove with {counts}. Use {length}, {specification}.",
+        f"I need {length} of {name}, {specification}. Fit {counts} into the loop.",
+        f"Write a {name} loop in {specification}. Over {length}, use {counts}.",
+        f"Can you give me {length} of {name} in {specification}? Use {counts} and keep a steady pulse.",
+    )
+    score = {"schema_version": "1.0", "style": style, "meter": meter}
+    if grouping:
+        score["grouping"] = grouping
+    score.update(tempo={"bpm": bpm, "beat_unit": beat_unit}, bars=bars,
+                 ticks_per_quarter=96, events=events)
+    score["metadata"] = {
+        "description": f"A repeating {name} groove with {character}. The part uses {counts}.",
+        "feel": feel,
+        "timing": timing_description(style, meter, unit, grouping, lag, events),
+    }
+    rows.append({
+        "messages": [
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": prompts[variant % len(prompts)]},
+            {"role": "assistant", "content": json.dumps(score, ensure_ascii=False, separators=(",", ":"))},
+        ],
+        "groove": {"family": f"{name} with exact counts", "feel": feel, "color": character,
+                   "influences": (), "cycle_bars": cycle},
+    })
 
 
 family("straight rock", "rock", "4/4", 116, "straight eighths",
@@ -404,7 +458,9 @@ family("long-short-short fusion", "fusion", "7/8", 114, "three plus two plus two
 
 add_families(family)
 
-assert len(rows) == 1000
+add_counted_examples(counted_family)
+
+assert len(rows) == 1240
 assert len({row["messages"][1]["content"] for row in rows}) == len(rows)
 (ROOT / "train.jsonl").write_text("".join(
     json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows

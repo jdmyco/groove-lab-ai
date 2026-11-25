@@ -153,6 +153,11 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	counts, _, err := parseHitCounts(prompt)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	userMessage := prompt
@@ -167,6 +172,9 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		score, err := parseScore([]byte(content))
+		if err == nil {
+			err = verifyHitCounts(score, counts)
+		}
 		if err == nil {
 			describeScore(&score)
 			writeJSON(w, http.StatusOK, score)

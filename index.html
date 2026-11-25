@@ -354,7 +354,7 @@
       const engine = byId("engine").value;
       const button = event.submitter;
       const target = byId("target").value;
-      const followUp = /^(?:(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:make (?:it|this|sure)\b|add\b|remove\b|drop\b|(?:do not |don['’]t )?swing\b|(?:set|change) (?:it|the tempo|tempo|bpm)\b)|(?:bpm\s*[:=]?\s*\d|\d+\s*bpm\b))/i.test(prompt);
+      const followUp = /^(?:(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:make (?:it|this|sure)\b|add\b|remove\b|drop\b|(?:do not |don['’]t )?swing\b|(?:set|change) (?:it|the tempo|tempo|bpm|the count|the number)\b)|(?:bpm\s*[:=]?\s*\d|\d+\s*bpm\b))/i.test(prompt);
       const editing = engine === "procedural" && (target === "edit" || target === "auto" && followUp && selected);
       if (editing && !selected) {
         status.textContent = "Open a groove to edit.";

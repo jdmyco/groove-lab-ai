@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -85,6 +86,7 @@ type grooveBrief struct {
 	text, style, meter, beatUnit string
 	bpm, bars                    int
 	grouping                     []int
+	counts                       []hitCount
 	required                     [][]string
 	excluded                     []string
 	influences                   map[string]bool
@@ -117,12 +119,12 @@ var (
 		{"closed_hat", "closed hi hats", "closed hi hat", "closed hats", "closed hat"},
 		{"foot_hat", "foot hi hats", "foot hi hat", "pedal hi hats", "pedal hi hat", "foot hats", "foot hat"},
 		{"hat", "hi hats", "hi hat", "hats", "hat"},
-		{"ride", "ride cymbal", "ride"}, {"rim", "rim clicks", "rim click", "cross stick", "side stick", "rim"},
-		{"kick", "bass drum", "kicks", "kick"}, {"snare", "snares", "snare"},
+		{"ride", "ride cymbals", "ride cymbal", "rides", "ride"}, {"rim", "rim clicks", "rim click", "cross sticks", "cross stick", "side sticks", "side stick", "rim"},
+		{"kick", "bass drums", "bass drum", "bass hits", "bass hit", "kicks", "kick"}, {"snare", "snares", "snare"},
 		{"tom_low", "floor toms", "floor tom", "low toms", "low tom"},
 		{"tom_mid", "mid toms", "mid tom"}, {"tom_high", "high toms", "high tom"},
 		{"tom", "toms", "tom"}, {"cowbell", "cowbells", "cowbell"},
-		{"clave", "clave"}, {"shaker", "shakers", "shaker"}, {"crash", "crash cymbals", "crash cymbal", "crash"},
+		{"clave", "claves", "clave"}, {"shaker", "shakers", "shaker"}, {"crash", "crash cymbals", "crash cymbal", "crashes", "crash"},
 	}
 	accents = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ñ", "n")
 )
@@ -322,7 +324,7 @@ func ranking(brief grooveBrief, candidate catalogGroove) (int, bool) {
 	return rank - max(distance, -distance)/5, true
 }
 
-func chooseGroove(brief grooveBrief, catalog []catalogGroove) (Score, error) {
+func matchingGrooves(brief grooveBrief, catalog []catalogGroove) []*catalogGroove {
 	brief.influences = make(map[string]bool)
 	for _, candidate := range catalog {
 		for _, artist := range candidate.tags.Influences {
@@ -335,17 +337,49 @@ func chooseGroove(brief grooveBrief, catalog []catalogGroove) (Score, error) {
 			}
 		}
 	}
-	var chosen *catalogGroove
-	best := 0
+	type match struct {
+		candidate *catalogGroove
+		rank      int
+	}
+	var matches []match
 	for i := range catalog {
 		candidate := &catalog[i]
-		if rank, matches := ranking(brief, *candidate); matches && (chosen == nil || rank > best) {
-			chosen, best = candidate, rank
+		rank, ok := ranking(brief, *candidate)
+		if !ok {
+			continue
 		}
+		for _, count := range brief.counts {
+			barTicks := meters[candidate.score.Meter].ticks()
+			cycle := candidate.tags.CycleBars
+			hits := countHits(candidate.score.Events, count.voice, 0, cycle*barTicks)
+			target := count.total
+			if count.perBar {
+				target *= brief.bars
+			}
+			distance := hits*brief.bars/cycle - target
+			rank -= min(12, max(distance, -distance))
+		}
+		matches = append(matches, match{candidate, rank})
 	}
-	if chosen == nil {
-		return Score{}, errors.New("no catalog groove matches those style, meter, grouping, length, or instrument requirements")
+	slices.SortStableFunc(matches, func(a, b match) int { return cmp.Compare(b.rank, a.rank) })
+	result := make([]*catalogGroove, 0, len(matches))
+	for _, found := range matches {
+		result = append(result, found.candidate)
 	}
+	return result
+}
+
+var errNoGroove = errors.New("no catalog groove matches those style, meter, grouping, length, or instrument requirements")
+
+func chooseGroove(brief grooveBrief, catalog []catalogGroove) (Score, error) {
+	matches := matchingGrooves(brief, catalog)
+	if len(matches) == 0 {
+		return Score{}, errNoGroove
+	}
+	return catalogScore(brief, matches[0])
+}
+
+func catalogScore(brief grooveBrief, chosen *catalogGroove) (Score, error) {
 	score := chosen.score
 	score.Tempo = retime(brief, score.Tempo)
 	if brief.bars != 0 && brief.bars != score.Bars {
@@ -367,9 +401,58 @@ func chooseGroove(brief grooveBrief, catalog []catalogGroove) (Score, error) {
 	return score, validateScore(score)
 }
 
+func chooseCountedGroove(brief grooveBrief, edits grooveEdits, catalog []catalogGroove) (Score, error) {
+	lengths := []int{brief.bars}
+	if brief.bars == 0 {
+		preferred := 1
+		for _, count := range brief.counts {
+			if !count.perBar {
+				preferred = max(preferred, min(4, (count.total+5)/6))
+			}
+		}
+		lengths = nil
+		for bars := preferred; bars <= 4; bars++ {
+			lengths = append(lengths, bars)
+		}
+		for bars := preferred - 1; bars >= 1; bars-- {
+			lengths = append(lengths, bars)
+		}
+	}
+	var failed error = errNoGroove
+	for _, bars := range lengths {
+		brief.bars = bars
+		seen := make(map[string]bool)
+		for _, candidate := range matchingGrooves(brief, catalog) {
+			// Try different musical foundations before variations of the same one.
+			if seen[candidate.family] {
+				continue
+			}
+			if len(seen) == 8 {
+				break
+			}
+			seen[candidate.family] = true
+			score, err := catalogScore(brief, candidate)
+			if err == nil {
+				score, err = editGroove(score, brief, edits)
+			}
+			if err == nil {
+				return score, nil
+			}
+			failed = err
+		}
+	}
+	return Score{}, failed
+}
+
 func serveProcedural(w http.ResponseWriter, prompt string, base *Score) {
+	counts, prompt, err := parseHitCounts(prompt)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	edits, seed := parseEdits(prompt)
 	brief, err := parseBrief(seed)
+	brief.counts = counts
 	var score Score
 	if err == nil {
 		if base != nil {
@@ -388,9 +471,13 @@ func serveProcedural(w http.ResponseWriter, prompt string, base *Score) {
 				writeError(w, http.StatusInternalServerError, "The groove catalog could not be read.")
 				return
 			}
-			score, err = chooseGroove(brief, catalog)
-			if err == nil && (len(edits.hits) > 0 || edits.swing != 0) {
-				score, err = editGroove(score, brief, edits)
+			if len(counts) > 0 {
+				score, err = chooseCountedGroove(brief, edits, catalog)
+			} else {
+				score, err = chooseGroove(brief, catalog)
+				if err == nil && (len(edits.hits) > 0 || edits.swing != 0) {
+					score, err = editGroove(score, brief, edits)
+				}
 			}
 		}
 	}

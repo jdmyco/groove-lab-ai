@@ -123,8 +123,8 @@ func TestTrainingCorpus(t *testing.T) {
 		t.Fatal("gallery corpus route did not return JSONL")
 	}
 	rows := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
-	if len(rows) != 1000 {
-		t.Fatalf("found %d rows, want 1000", len(rows))
+	if len(rows) != 1240 {
+		t.Fatalf("found %d rows, want 1240", len(rows))
 	}
 
 	prompts := make(map[string]bool)
@@ -133,6 +133,7 @@ func TestTrainingCorpus(t *testing.T) {
 	styleCounts := make(map[string]int)
 	meterCounts := make(map[string]bool)
 	lengths := make(map[int]bool)
+	countedRows := 0
 	for index, line := range rows {
 		var record catalogRecord
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
@@ -167,6 +168,32 @@ func TestTrainingCorpus(t *testing.T) {
 			brief.beatUnit != "" && brief.beatUnit != score.Tempo.BeatUnit ||
 			len(brief.grouping) != 0 && !slices.Equal(brief.grouping, score.Grouping) {
 			t.Fatalf("row %d score does not match its prompt: %s (%v)", index+1, prompt, err)
+		}
+
+		counts, _, err := parseHitCounts(prompt)
+		if err != nil {
+			t.Fatalf("row %d could not parse counts: %v", index+1, err)
+		}
+		if len(counts) > 0 {
+			countedRows++
+			if err := verifyHitCounts(score, counts); err != nil {
+				t.Fatalf("row %d: %s: %v", index+1, prompt, err)
+			}
+			payload, _ := json.Marshal(map[string]string{"engine": "procedural", "prompt": prompt})
+			response := generateRequest(handler, string(payload))
+			if response.Code != http.StatusOK {
+				t.Fatalf("row %d: %s: HTTP %d: %s", index+1, prompt, response.Code, response.Body)
+			}
+			generated, err := parseScore(response.Body.Bytes())
+			if err != nil {
+				t.Fatalf("row %d generated invalid score: %v", index+1, err)
+			}
+			if generated.Style != score.Style || generated.Meter != score.Meter || generated.Bars != score.Bars || generated.Tempo != score.Tempo {
+				t.Fatalf("row %d generated incorrect style, meter, length, or tempo", index+1)
+			}
+			if err := verifyHitCounts(generated, counts); err != nil {
+				t.Fatalf("row %d generated incorrect hit totals: %v", index+1, err)
+			}
 		}
 
 		if record.Groove.CycleBars < 1 || score.Bars%record.Groove.CycleBars != 0 || record.Groove.Family == "" {
@@ -222,8 +249,11 @@ func TestTrainingCorpus(t *testing.T) {
 		meterCounts[score.Meter] = true
 		lengths[score.Bars] = true
 	}
-	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 53 {
-		t.Error("corpus should cover ten styles, seven meters, four bar counts and 53 groove families")
+	if countedRows != 240 {
+		t.Errorf("found %d count-focused presets, want 240", countedRows)
+	}
+	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 65 {
+		t.Error("corpus should cover ten styles, seven meters, four bar counts and 65 groove families")
 	}
 }
 
@@ -289,7 +319,7 @@ func TestProceduralGeneration(t *testing.T) {
 	for _, prompt := range []string{
 		"funk 11/8", "reggae at 420 BPM", "7/8 grouped 3+3", "funk 9 bars",
 		"reggae at -82 BPM", "funk at −82 bpm", "funk BPM 120.82", "4/4 jazz at 105 BPM with cowbell",
-		"funk at 110 BPM with shaker and floor tom", "7/8 fusion without floor toms",
+		"funk at 110 BPM with shaker and floor tom",
 		"4/4 jazz swing with no hi-hat", "Steve Gadd in 7/8",
 	} {
 		request, _ := json.Marshal(map[string]string{"prompt": prompt, "engine": "procedural"})
@@ -326,7 +356,11 @@ func TestCatalogPromptsGenerate(t *testing.T) {
 			t.Fatal(err)
 		}
 		prompt := record.Messages[1].Content
-		brief, err := parseBrief(prompt)
+		_, seed, err := parseHitCounts(prompt)
+		if err != nil {
+			t.Fatalf("row %d cannot be parsed: %v", index+1, err)
+		}
+		brief, err := parseBrief(seed)
 		if err != nil {
 			t.Errorf("row %d cannot be parsed: %v", index+1, err)
 			continue
@@ -344,6 +378,7 @@ func TestProceduralLanguageClauses(t *testing.T) {
 	handler := newHandler(modelClient{})
 	for _, prompt := range []string{
 		"4/4 rock with no toms, snare on two and four",
+		"7/8 fusion without floor toms",
 		"No four on the floor in 4/4 funk",
 		"Jazz with ride or shaker",
 		"Dusty hip-hop at 90 BPM and lay the backbeat slightly late",
@@ -369,7 +404,7 @@ func TestProceduralLanguageClauses(t *testing.T) {
 				t.Error("returned an excluded four-on-the-floor kick")
 			}
 		}
-		if strings.Contains(prompt, "no toms") && slices.ContainsFunc(score.Events, func(event Event) bool {
+		if (strings.Contains(prompt, "no toms") || strings.Contains(prompt, "without floor toms")) && slices.ContainsFunc(score.Events, func(event Event) bool {
 			return strings.HasPrefix(event.Instrument, "tom_")
 		}) {
 			t.Error("returned excluded toms")
@@ -557,5 +592,242 @@ func TestProceduralComposesEditsOnNewGrooves(t *testing.T) {
 	}
 	if score.Metadata == nil || score.Metadata.Feel != "Swung eighths" {
 		t.Error("missing swing feel after compound edits")
+	}
+}
+
+func TestProceduralExactHitCounts(t *testing.T) {
+	handler := newHandler(modelClient{})
+	base := generateRequest(handler, `{"engine":"procedural","prompt":"Two bars of straight rock at 112 BPM"}`)
+	if base.Code != 200 {
+		t.Fatal(base.Body.String())
+	}
+	type expectedCount struct {
+		voice  string
+		n      int
+		perBar bool
+	}
+	for _, tc := range []struct {
+		prompt string
+		counts []expectedCount
+		edit   bool
+		bars   int
+		crash  bool
+	}{
+		{prompt: "Give me a groove with 15 ghost notes", counts: []expectedCount{{"ghost", 15, false}}},
+		{prompt: "Give me a groove with 20 bass hits", counts: []expectedCount{{"kick", 20, false}}},
+		{prompt: "Four bars of funk at 110 BPM with fifteen snare ghost notes and twenty bass-drum hits", counts: []expectedCount{{"ghost", 15, false}, {"kick", 20, false}}, bars: 4},
+		{prompt: "Two bars of straight rock with 6 kick hits in each bar and exactly 1 crash in the loop, with a crash on beat 3", counts: []expectedCount{{"kick", 6, true}, {"crash", 1, false}}},
+		{prompt: "Set it to 3 ghost notes per bar and 7 snare hits total, with zero kicks", counts: []expectedCount{{"ghost", 3, true}, {"snare", 7, false}, {"kick", 0, false}}, edit: true, bars: 2},
+		{prompt: "Use exactly 9 kicks and 2 crashes, with a crash on beat 3", counts: []expectedCount{{"kick", 9, false}, {"crash", 2, false}}, edit: true, bars: 2, crash: true},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			payload := map[string]any{"engine": "procedural", "prompt": tc.prompt}
+			if tc.edit {
+				payload["base_score"] = json.RawMessage(base.Body.Bytes())
+			}
+			body, _ := json.Marshal(payload)
+			response := generateRequest(handler, string(body))
+			if len(tc.counts) == 2 && tc.counts[1].voice == "crash" && tc.counts[1].n == 1 {
+				if response.Code != 422 {
+					t.Fatalf("a crash per bar conflicts with one crash total: %d %s", response.Code, response.Body)
+				}
+				return
+			}
+			if response.Code != 200 {
+				t.Fatalf("HTTP %d: %s", response.Code, response.Body)
+			}
+			score, err := parseScore(response.Body.Bytes())
+			if err != nil || tc.bars != 0 && score.Bars != tc.bars {
+				t.Fatalf("invalid score or bar count: %v", err)
+			}
+			for _, want := range tc.counts {
+				n := 1
+				if want.perBar {
+					n = score.Bars
+				}
+				found := make([]int, n)
+				for _, event := range score.Events {
+					if matchesVoice(event, want.voice) {
+						found[*event.Tick/meters[score.Meter].ticks()%n]++
+					}
+				}
+				for _, got := range found {
+					if got != want.n {
+						t.Errorf("got %v %s, want %d", found, want.voice, want.n)
+						break
+					}
+				}
+			}
+			if tc.crash {
+				for bar := range score.Bars {
+					tick := bar*384 + 192
+					if !slices.ContainsFunc(score.Events, func(e Event) bool { return *e.Tick == tick && e.Instrument == "crash" }) {
+						t.Errorf("lost crash at tick %d", tick)
+					}
+				}
+			}
+		})
+	}
+	for _, prompt := range []string{
+		"One bar of funk with 256 ghost notes",
+		"One bar of funk with 3 kicks and 5 kick hits",
+		"One bar of funk with 4 ghost notes and 3 snare hits",
+		"One bar of rock with 5 kicks, no kick hits",
+		"One bar of rock with -2 kick hits",
+		"One bar of rock with 2.5 kick hits",
+	} {
+		body, _ := json.Marshal(map[string]string{"engine": "procedural", "prompt": prompt})
+		response := generateRequest(handler, string(body))
+		if response.Code != 422 {
+			t.Errorf("%s: HTTP %d, want 422", prompt, response.Code)
+		}
+	}
+}
+
+func TestLocalModelRetriesWrongHitCount(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct{ Messages []message }
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		content := validScore
+		if calls.Add(1) > 1 {
+			if !strings.Contains(request.Messages[1].Content, "expected 2 kick hits, got 1") {
+				t.Errorf("missing count feedback: %s", request.Messages[1].Content)
+			}
+			content = strings.Replace(content, `"velocity":110}]`, `"velocity":110},{"tick":96,"instrument":"kick","velocity":90}]`, 1)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
+			"message": map[string]string{"content": content},
+		}}})
+	}))
+	defer upstream.Close()
+	handler := newHandler(modelClient{upstream.URL, "local-test", upstream.Client()})
+	response := generateRequest(handler, `{"engine":"llm","prompt":"A blues groove with 2 bass hits"}`)
+	if response.Code != 200 || calls.Load() != 2 {
+		t.Fatalf("HTTP %d after %d calls: %s", response.Code, calls.Load(), response.Body)
+	}
+}
+
+func TestCountedHitsRespectWiderPerBarLimit(t *testing.T) {
+	base, err := parseScore([]byte(validScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	base.Style, base.Meter, base.Bars, base.Tempo = "rock", "4/4", 2, Tempo{112, "quarter"}
+	base.Events = nil
+	for tick := 0; tick < 768; tick += 48 {
+		base.Events = append(base.Events, editedEvent(tick, "closed_hat", 70))
+	}
+	for _, tick := range []int{24, 72, 120} {
+		base.Events = append(base.Events, editedEvent(tick, "snare", 40))
+	}
+	body, _ := json.Marshal(map[string]any{
+		"engine": "procedural", "prompt": "3 ghost notes total and 2 snare hits per bar", "base_score": base,
+	})
+	response := generateRequest(newHandler(modelClient{}), string(body))
+	if response.Code != 200 {
+		t.Fatalf("HTTP %d: %s", response.Code, response.Body)
+	}
+	score, err := parseScore(response.Body.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct {
+		voice              string
+		start, stop, count int
+	}{
+		{"snare", 0, 384, 2}, {"snare", 384, 768, 2}, {"ghost", 0, 768, 3},
+	} {
+		if got := countHits(score.Events, want.voice, want.start, want.stop); got != want.count {
+			t.Errorf("got %d %s, want %d", got, want.voice, want.count)
+		}
+	}
+}
+
+func TestCountParserHandlesHundredsAndNegativeInstructions(t *testing.T) {
+	for _, prompt := range []string{
+		"Four bars of funk with anything but 5 kicks",
+		"Two bars of blues. Do not add 4 kick hits.",
+		"Two bars of blues. Don’t use exactly four kick hits.",
+		"Four bars of funk with three hundred kicks",
+		"A hip-hop groove with exactly 808 kicks",
+	} {
+		if _, _, err := parseHitCounts(prompt); err == nil {
+			t.Errorf("parsed an exact count from %q", prompt)
+		}
+	}
+	kitPrompt := "Give me a boom bap hip-hop groove with an 808 kick"
+	if counts, clean, err := parseHitCounts(kitPrompt); len(counts) != 0 || clean != kitPrompt || err != nil {
+		t.Errorf("treated the drum machine model as a count: %v, %q, %v", counts, clean, err)
+	}
+	counts, _, err := parseHitCounts("A loop with one hundred and twenty-three bass hits")
+	if err != nil || !slices.Equal(counts, []hitCount{{voice: "kick", total: 123}}) {
+		t.Errorf("wrong spelled count: %v, %v", counts, err)
+	}
+}
+
+func TestCountedHitsPreserveExplicitPositionsAndMeter(t *testing.T) {
+	handler := newHandler(modelClient{})
+	for _, prompt := range []string{"Give me a 6/8 kick and rim groove", "Give me a 6 / 8 kick and rim groove"} {
+		body, _ := json.Marshal(map[string]string{"engine": "procedural", "prompt": prompt})
+		response := generateRequest(handler, string(body))
+		score, err := parseScore(response.Body.Bytes())
+		if response.Code != 200 || err != nil || score.Meter != "6/8" {
+			t.Fatalf("lost meter in %q: HTTP %d %v", prompt, response.Code, err)
+		}
+	}
+	base := generateRequest(handler, `{"engine":"procedural","prompt":"Two bars of straight rock at 112 BPM"}`)
+	if base.Code != 200 {
+		t.Fatal(base.Body.String())
+	}
+	body, _ := json.Marshal(map[string]any{
+		"engine": "procedural", "base_score": json.RawMessage(base.Body.Bytes()),
+		"prompt": "1 kick per bar on beat 3, 4 snare hits total, and 2 ghost notes total on beat 2, with a snare on beat 2",
+	})
+	response := generateRequest(handler, string(body))
+	if response.Code != 200 {
+		t.Fatalf("HTTP %d: %s", response.Code, response.Body)
+	}
+	score, err := parseScore(response.Body.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range score.Events {
+		phase := *event.Tick % 384
+		if event.Instrument == "kick" && phase != 192 || matchesVoice(event, "ghost") && phase != 96 {
+			t.Errorf("misplaced event: phase %d, %+v", phase, event)
+		}
+	}
+}
+
+func TestCountedHitsFreeCapacityBeforeAdding(t *testing.T) {
+	base := Score{
+		SchemaVersion: "1.0", Style: "rock", Meter: "7/4", Bars: 4,
+		TicksPerQuarter: 96, Tempo: Tempo{100, "quarter"},
+	}
+	for tick := 0; tick < 4*672; tick += 24 {
+		base.Events = append(base.Events, editedEvent(tick, "closed_hat", 70), editedEvent(tick, "kick", 90))
+		if tick/24 < 64 && tick/24%2 == 0 {
+			base.Events = append(base.Events, editedEvent(tick, "snare", 100))
+		}
+	}
+	if err := validateScore(base); err != nil || len(base.Events) != 256 {
+		t.Fatalf("invalid test base: %v", err)
+	}
+	for _, prompt := range []string{"15 ghost notes and zero kicks", "zero kicks and 15 ghost notes"} {
+		body, _ := json.Marshal(map[string]any{"engine": "procedural", "prompt": prompt, "base_score": base})
+		response := generateRequest(newHandler(modelClient{}), string(body))
+		if response.Code != 200 {
+			t.Fatalf("%q: HTTP %d: %s", prompt, response.Code, response.Body)
+		}
+		score, err := parseScore(response.Body.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if countHits(score.Events, "ghost", 0, 4*672) != 15 || countHits(score.Events, "kick", 0, 4*672) != 0 {
+			t.Fatalf("did not honor %q", prompt)
+		}
 	}
 }
