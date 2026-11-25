@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -120,19 +121,18 @@ func TestTrainingCorpus(t *testing.T) {
 		t.Fatal("gallery corpus route did not return JSONL")
 	}
 	rows := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
-	if len(rows) != 100 {
-		t.Fatalf("found %d rows, want 100", len(rows))
+	if len(rows) != 500 {
+		t.Fatalf("found %d rows, want 500", len(rows))
 	}
 
 	prompts := make(map[string]bool)
 	patterns := make(map[string]bool)
-	styles := make(map[string]int)
-	meters := make(map[string]bool)
+	families := make(map[string]bool)
+	styleCounts := make(map[string]int)
+	meterCounts := make(map[string]bool)
 	lengths := make(map[int]bool)
 	for index, line := range rows {
-		var record struct {
-			Messages []message `json:"messages"`
-		}
+		var record catalogRecord
 		if err := json.Unmarshal([]byte(line), &record); err != nil {
 			t.Fatalf("row %d: %v", index+1, err)
 		}
@@ -140,12 +140,11 @@ func TestTrainingCorpus(t *testing.T) {
 			record.Messages[1].Role != "user" || record.Messages[2].Role != "assistant" {
 			t.Fatalf("row %d has unexpected messages", index+1)
 		}
-		prompt := strings.ToLower(strings.TrimSpace(record.Messages[1].Content))
-		if prompt == "" || prompts[prompt] {
+		prompt := strings.TrimSpace(record.Messages[1].Content)
+		if prompt == "" || prompts[strings.ToLower(prompt)] {
 			t.Fatalf("row %d has a blank or repeated prompt", index+1)
 		}
-		prompts[prompt] = true
-
+		prompts[strings.ToLower(prompt)] = true
 		rawScore := record.Messages[2].Content
 		score, err := parseScore([]byte(rawScore))
 		if err != nil {
@@ -155,26 +154,71 @@ func TestTrainingCorpus(t *testing.T) {
 		if err != nil || string(canonical) != rawScore {
 			t.Fatalf("row %d is not a compact, sorted score", index+1)
 		}
+		brief, err := parseBrief(prompt)
+		if err != nil ||
+			brief.meter != "" && brief.meter != score.Meter ||
+			brief.bars != 0 && brief.bars != score.Bars ||
+			brief.bpm != 0 && brief.bpm != score.Tempo.BPM ||
+			brief.beatUnit != "" && brief.beatUnit != score.Tempo.BeatUnit ||
+			len(brief.grouping) != 0 && !slices.Equal(brief.grouping, score.Grouping) {
+			t.Fatalf("row %d score does not match its prompt: %s (%v)", index+1, prompt, err)
+		}
+
+		if record.Groove.CycleBars < 1 || score.Bars%record.Groove.CycleBars != 0 || record.Groove.Family == "" {
+			t.Fatalf("row %d has invalid cycle or family metadata", index+1)
+		}
+		barTicks := meters[score.Meter].ticks()
+		cycleTicks := barTicks * record.Groove.CycleBars
 		var pattern strings.Builder
-		fmt.Fprintf(&pattern, "%s/%d ", score.Meter, score.Bars)
+		fmt.Fprintf(&pattern, "%s ", score.Meter)
+		cycle := make([]Event, 0)
 		for _, event := range score.Events {
-			fmt.Fprintf(&pattern, "%d/%s ", *event.Tick, event.Instrument)
+			if *event.Tick < cycleTicks {
+				cycle = append(cycle, event)
+				fmt.Fprintf(&pattern, "%d/%s ", *event.Tick, event.Instrument)
+			}
 		}
 		if patterns[pattern.String()] {
-			t.Fatalf("row %d repeats an existing rhythm", index+1)
+			t.Fatalf("row %d repeats an existing rhythm at another tempo or length", index+1)
 		}
 		patterns[pattern.String()] = true
-		styles[score.Style]++
-		meters[score.Meter] = true
+		if len(cycle)*score.Bars/record.Groove.CycleBars != len(score.Events) {
+			t.Fatalf("row %d changes density on the way to the loop seam", index+1)
+		}
+		for sequence, event := range score.Events {
+			first := cycle[sequence%len(cycle)]
+			if *event.Tick != *first.Tick+(sequence/len(cycle))*cycleTicks ||
+				event.Instrument != first.Instrument || event.Offset != first.Offset || event.Velocity != first.Velocity {
+				t.Fatalf("row %d changes the groove on a repeated cycle", index+1)
+			}
+		}
+		for bar := 0; bar < score.Bars; bar++ {
+			keeper, integratedTom := false, false
+			hasTom := false
+			for _, event := range score.Events {
+				if *event.Tick/barTicks != bar {
+					continue
+				}
+				withinBar := *event.Tick % barTicks
+				switch event.Instrument {
+				case "ride", "closed_hat", "open_hat", "cowbell", "shaker", "clave":
+					keeper = keeper || withinBar >= barTicks-144
+				case "tom_high", "tom_mid", "tom_low":
+					hasTom = true
+					integratedTom = integratedTom || withinBar < barTicks-96
+				}
+			}
+			if !keeper || hasTom && !integratedTom {
+				t.Fatalf("row %d bar %d drops timekeeping or leaves toms for the ending", index+1, bar+1)
+			}
+		}
+		families[record.Groove.Family] = true
+		styleCounts[score.Style]++
+		meterCounts[score.Meter] = true
 		lengths[score.Bars] = true
 	}
-	for _, style := range []string{"rock", "funk", "blues", "jazz"} {
-		if styles[style] != 25 {
-			t.Errorf("found %d %s scores, want 25", styles[style], style)
-		}
-	}
-	if len(meters) != 4 || len(lengths) != 4 {
-		t.Error("corpus should cover all supported meters and bar counts")
+	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 28 {
+		t.Error("corpus should cover ten styles, seven meters, four bar counts and 28 groove families")
 	}
 }
 
@@ -194,6 +238,136 @@ func TestLoopbackHost(t *testing.T) {
 		handler.ServeHTTP(response, request)
 		if response.Code != want {
 			t.Errorf("host %s: got HTTP %d, want %d", host, response.Code, want)
+		}
+	}
+}
+
+func TestProceduralGeneration(t *testing.T) {
+	handler := newHandler(modelClient{})
+	for _, tc := range []struct {
+		prompt, style, meter string
+		bpm, bars            int
+	}{
+		{"Play a Steve Gadd pocket at 103 BPM for two bars", "funk", "4/4", 103, 2},
+		{"A funky upbeat song", "funk", "4/4", 0, 0},
+		{"A 7/8 fusion groove grouped 2+2+3 at 120 BPM, 2 bars", "fusion", "7/8", 120, 2},
+		{"A 5/4 jazz groove grouped 2+3, BPM 132", "jazz", "5/4", 132, 0},
+		{"Funk with four on the floor at 112 bpm", "funk", "4/4", 112, 0},
+		{"One bar of reggae one drop at 82 BPM", "reggae", "4/4", 82, 1},
+		{"A jazzy 3/4 swing groove at 145 bpm", "jazz", "3/4", 145, 0},
+	} {
+		t.Run(tc.prompt, func(t *testing.T) {
+			request, _ := json.Marshal(map[string]string{"prompt": tc.prompt, "engine": "procedural"})
+			response := generateRequest(handler, string(request))
+			if response.Code != 200 {
+				t.Fatalf("got HTTP %d: %s", response.Code, response.Body)
+			}
+			score, err := parseScore(response.Body.Bytes())
+			if err != nil || score.Style != tc.style || score.Meter != tc.meter ||
+				tc.bpm != 0 && score.Tempo.BPM != tc.bpm || tc.bars != 0 && score.Bars != tc.bars {
+				t.Fatalf("did not honor prompt, got %+v, %v", score, err)
+			}
+			if strings.Contains(tc.prompt, "four on the floor") {
+				for tick := 0; tick < score.Bars*384; tick += 96 {
+					if !slices.ContainsFunc(score.Events, func(event Event) bool {
+						return event.Instrument == "kick" && *event.Tick == tick
+					}) {
+						t.Fatalf("missing four-on-the-floor kick at tick %d", tick)
+					}
+				}
+			}
+			if again := generateRequest(handler, string(request)); again.Body.String() != response.Body.String() {
+				t.Fatal("same prompt changed the returned score")
+			}
+		})
+	}
+	for _, prompt := range []string{
+		"funk 11/8", "reggae at 420 BPM", "7/8 grouped 3+3", "funk 9 bars",
+		"reggae at -82 BPM", "funk at −82 bpm", "funk BPM 120.82", "4/4 jazz at 105 BPM with cowbell",
+		"funk at 110 BPM with shaker and floor tom", "7/8 fusion without floor toms",
+		"4/4 jazz swing with no hi-hat", "Steve Gadd in 7/8",
+	} {
+		request, _ := json.Marshal(map[string]string{"prompt": prompt, "engine": "procedural"})
+		if response := generateRequest(handler, string(request)); response.Code != 422 {
+			t.Errorf("expected unsupported request to return 422: %s, got %d", prompt, response.Code)
+		}
+	}
+}
+
+func TestGroupedScoreAndTimingOffset(t *testing.T) {
+	raw := `{"schema_version":"1.0","style":"fusion","meter":"7/8","grouping":[2,2,3],"tempo":{"bpm":118,"beat_unit":"quarter"},"bars":1,"ticks_per_quarter":96,"events":[{"tick":0,"instrument":"kick","velocity":100},{"tick":96,"instrument":"snare","velocity":99,"offset":3}]}`
+	if _, err := parseScore([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		strings.Replace(raw, "[2,2,3]", "[2,2,2]", 1),
+		strings.Replace(raw, `"offset":3`, `"offset":8`, 1),
+		strings.NewReplacer(`"tick":96`, `"tick":0`, `"offset":3`, `"offset":-1`).Replace(raw),
+	} {
+		if _, err := parseScore([]byte(bad)); err == nil {
+			t.Fatal("accepted invalid group or offset")
+		}
+	}
+}
+
+func TestCatalogPromptsGenerate(t *testing.T) {
+	catalog, err := loadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, line := range strings.Split(strings.TrimSpace(string(corpus)), "\n") {
+		var record catalogRecord
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatal(err)
+		}
+		prompt := record.Messages[1].Content
+		brief, err := parseBrief(prompt)
+		if err != nil {
+			t.Errorf("row %d cannot be parsed: %v", index+1, err)
+			continue
+		}
+		if _, ok := ranking(brief, catalog[index]); !ok {
+			t.Errorf("row %d is incompatible with its own prompt: %s", index+1, prompt)
+		}
+		if _, err := chooseGroove(brief, catalog); err != nil {
+			t.Errorf("row %d does not match the catalog: %s: %v", index+1, prompt, err)
+		}
+	}
+}
+
+func TestProceduralLanguageClauses(t *testing.T) {
+	handler := newHandler(modelClient{})
+	for _, prompt := range []string{
+		"4/4 rock with no toms, snare on two and four",
+		"No four on the floor in 4/4 funk",
+		"Jazz with ride or shaker",
+		"Dusty hip-hop at 90 BPM and lay the backbeat slightly late",
+	} {
+		request, _ := json.Marshal(map[string]string{"prompt": prompt, "engine": "procedural"})
+		response := generateRequest(handler, string(request))
+		if response.Code != 200 {
+			t.Errorf("prompt %s got HTTP %d: %s", prompt, response.Code, response.Body)
+			continue
+		}
+		score, err := parseScore(response.Body.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.HasPrefix(prompt, "No four on the floor") {
+			four := 0
+			for _, event := range score.Events {
+				if event.Instrument == "kick" && *event.Tick%96 == 0 {
+					four++
+				}
+			}
+			if four == score.Bars*4 {
+				t.Error("returned an excluded four-on-the-floor kick")
+			}
+		}
+		if strings.Contains(prompt, "no toms") && slices.ContainsFunc(score.Events, func(event Event) bool {
+			return strings.HasPrefix(event.Instrument, "tom_")
+		}) {
+			t.Error("returned excluded toms")
 		}
 	}
 }

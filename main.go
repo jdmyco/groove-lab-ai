@@ -43,6 +43,9 @@ type message struct {
 }
 
 func main() {
+	if _, err := loadCatalog(); err != nil {
+		log.Fatal(err)
+	}
 	port := env("PORT", "8080")
 	model := modelClient{
 		url:    env("LLM_URL", "http://127.0.0.1:8765/v1/chat/completions"),
@@ -113,6 +116,7 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	var request struct {
 		Prompt string `json:"prompt"`
+		Engine string `json:"engine"`
 	}
 	if err := json.Unmarshal(body, &request, json.RejectUnknownMembers(true)); err != nil {
 		writeError(w, http.StatusBadRequest, "Send an object with a prompt string.")
@@ -121,6 +125,16 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" || utf8.RuneCountInString(prompt) > 1000 {
 		writeError(w, http.StatusBadRequest, "Enter a prompt of 1–1,000 characters.")
+		return
+	}
+
+	switch request.Engine {
+	case "procedural":
+		serveProcedural(w, prompt)
+		return
+	case "", "llm":
+	default:
+		writeError(w, http.StatusBadRequest, "Choose the procedural or llm engine.")
 		return
 	}
 

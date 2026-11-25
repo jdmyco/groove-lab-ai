@@ -20,9 +20,9 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; }
-    button, input, textarea { font: inherit; }
+    button, input, textarea, select { font: inherit; }
     button, summary { cursor: pointer; }
-    button:disabled { opacity: .65; cursor: wait; }
+    button:disabled { opacity: .55; cursor: default; }
     [hidden] { display: none !important; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     a { color: inherit; }
@@ -50,11 +50,20 @@
     h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.05; letter-spacing: -.07em; }
     .compose form { display: grid; gap: 10px; }
     .input-label { font-size: .875rem; font-weight: 650; }
-    textarea, input[type="search"] {
+    textarea, input[type="search"], select {
       background: #13181b; color: inherit; border: 1px solid #49555a; border-radius: 8px;
     }
     textarea { line-height: 1.45; padding: 12px; width: 100%; min-height: 74px; resize: vertical; }
     textarea::placeholder, input::placeholder { color: #a0afb0; }
+    .compose-actions, .pager { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .compose-actions label { color: var(--muted); margin-left: 5px; }
+    select {
+      appearance: none; min-height: 42px; padding: 7px 26px 7px 10px;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: right 13px center, right 9px center;
+      background-size: 4px 4px; background-repeat: no-repeat;
+    }
     .submit {
       justify-self: start; padding: 9px 16px; min-height: 42px; background: var(--accent);
       color: #151914; border: 1px solid transparent; border-radius: 8px; font-weight: 750;
@@ -74,11 +83,11 @@
     h2 { font-size: 1.85rem; letter-spacing: -.055em; }
     .tools { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; margin-bottom: 16px; }
     .filters { display: flex; gap: 6px; flex-wrap: wrap; }
-    .filters button, .play {
+    .filters button, .pager button, .play {
       min-height: 38px; color: inherit; border: 1px solid var(--border); background: #20272b;
       border-radius: 7px; padding: 6px 12px; font-size: .875rem; font-weight: 650;
     }
-    .filters button:hover, .play:hover { border-color: var(--accent); }
+    .filters button:hover, .pager button:hover:enabled, .play:hover { border-color: var(--accent); }
     .filters button[aria-pressed="true"], .playing .play {
       background: var(--accent); border-color: var(--accent); color: #141a13;
     }
@@ -88,6 +97,7 @@
     .card.playing { border-color: var(--accent); }
     .card-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 9px; }
     .style { font-size: .875rem; font-weight: 750; color: var(--accent); text-transform: capitalize; }
+    .influence { color: var(--muted); font-size: .75rem; margin-top: 6px; }
     .meta { font: .75rem var(--mono); color: var(--muted); margin-top: 3px; }
     .play { flex: none; padding-inline: 10px; }
     .play::before {
@@ -104,17 +114,20 @@
     .lane-label { font: .625rem var(--mono); color: #a9b6b6; white-space: nowrap; }
     .track {
       position: relative; height: 11px; overflow: hidden;
-      background-image: linear-gradient(to right, #727f72 1px, transparent 1px),
-                        linear-gradient(to right, #2c3739 1px, transparent 1px);
-      background-size: var(--bar) 100%, var(--beat) 100%;
     }
     .hit {
       position: absolute; left: var(--tick); top: 2px; width: 4px; height: 7px;
       border-radius: 1px; background: var(--voice); opacity: var(--strength);
     }
-    .playhead {
-      position: absolute; inset: 5px 6px 5px 58px; pointer-events: none; visibility: hidden;
+    .measure-guides, .playhead {
+      position: absolute; inset: 5px 6px 5px 58px; pointer-events: none;
     }
+    .measure-guides i {
+      position: absolute; inset-block: 0; width: 1px; background: #384342;
+    }
+    .measure-guides i.barline { background: #89937f; }
+    .playhead { visibility: hidden; }
+    .pager button { min-height: 32px; padding-block: 4px; }
     .playing .playhead { visibility: visible; }
     .playhead i { position: absolute; inset-block: 0; width: 1px; background: var(--accent); }
     details { margin-top: 8px; color: var(--muted); font-size: .8125rem; }
@@ -148,7 +161,14 @@
       <form id="generate">
         <label class="input-label" for="prompt">Describe a groove</label>
         <textarea id="prompt" required maxlength="1000" placeholder="Make me a funky upbeat groove with a snappy backbeat."></textarea>
-        <button class="submit" type="submit">Generate groove</button>
+        <div class="compose-actions">
+          <button class="submit" type="submit">Generate groove</button>
+          <label for="engine" class="input-label">Engine</label>
+          <select id="engine">
+            <option value="procedural">Procedural</option>
+            <option value="llm">Local LLM</option>
+          </select>
+        </div>
         <p id="generation-status" class="status" role="status"></p>
       </form>
     </section>
@@ -156,17 +176,15 @@
     <section class="library" aria-labelledby="library-heading">
       <div class="section-head">
         <h2 id="library-heading">Score gallery</h2>
-        <p id="gallery-status" class="status" role="status">Loading scores…</p>
+        <div id="pager" class="pager" aria-label="Gallery pages">
+          <p id="gallery-status" class="status" role="status">Loading scores…</p>
+          <button type="button" id="previous" disabled>Previous</button>
+          <button type="button" id="next" disabled>Next</button>
+        </div>
       </div>
       <div class="tools">
-        <div class="filters" role="group" aria-label="Filter by style">
-          <button type="button" data-style="" aria-pressed="true">All</button>
-          <button type="button" data-style="rock" aria-pressed="false">Rock</button>
-          <button type="button" data-style="funk" aria-pressed="false">Funk</button>
-          <button type="button" data-style="blues" aria-pressed="false">Blues</button>
-          <button type="button" data-style="jazz" aria-pressed="false">Jazz</button>
-        </div>
-        <input id="search" type="search" aria-label="Search prompts and scores" placeholder="Search prompts or meters">
+        <div id="filters" class="filters" role="group" aria-label="Filter by style"></div>
+        <input id="search" type="search" aria-label="Search prompts and scores" placeholder="Search prompts, artists or meters">
       </div>
       <div id="gallery" class="gallery"></div>
     </section>
@@ -175,6 +193,8 @@
     const kit = {
       kick: ["Kick", "#f5b87b"], snare: ["Snare", "#ff977e"], rim: ["Rim", "#ffc0a5"],
       closed_hat: ["Cl. hat", "#d7e87d"], open_hat: ["Op. hat", "#d7e87d"],
+      foot_hat: ["Ft. hat", "#9aad63"], cowbell: ["Bell", "#f1d78e"],
+      clave: ["Clave", "#f3aa74"], shaker: ["Shaker", "#bdcfa2"],
       ride: ["Ride", "#8ce0d0"], crash: ["Crash", "#a7d5f5"],
       tom_high: ["Hi tom", "#d4b4fc"], tom_mid: ["Mid tom", "#d4b4fc"], tom_low: ["Lo tom", "#d4b4fc"],
     };
@@ -183,7 +203,9 @@
     const galleryStatus = byId("gallery-status");
     const generationStatus = byId("generation-status");
     const generated = byId("generated");
-    const filters = [...document.querySelectorAll(".filters button")];
+    const filters = byId("filters");
+    const pageSize = 24;
+    let pageIndex = 0;
     let entries = [];
     let selectedStyle = "";
     let catalogLoaded = false;
@@ -196,33 +218,49 @@
       return node;
     }
 
+    function styleName(style) {
+      return style === "hip_hop" ? "Hip-hop" : style[0].toUpperCase() + style.slice(1);
+    }
+
     function timing(score) {
       const [numerator, denominator] = score.meter.split("/").map(Number);
       const quarter = score.ticks_per_quarter;
-      const bar = numerator * quarter * 4 / denominator;
-      const pulse = denominator === 8 ? quarter * 1.5 : quarter;
+      const unit = quarter * 4 / denominator;
+      const bar = numerator * unit;
+      const groups = score.grouping || (score.meter === "6/8" ? [3,3]
+        : score.meter === "12/8" ? [3,3,3,3] : Array(numerator).fill(1));
       const tempoBeat = score.tempo.beat_unit === "dotted_quarter" ? quarter * 1.5 : quarter;
-      return { bar, pulse, total: bar * score.bars, secondsPerTick: 60 / score.tempo.bpm / tempoBeat };
+      return { bar, unit, groups, total: bar * score.bars, secondsPerTick: 60 / score.tempo.bpm / tempoBeat };
     }
 
-    function renderScore(prompt, score, label) {
+    function renderScore(prompt, score, label, tags) {
       const card = element("article", "card");
-      const style = element("div", "style", label ? `${label} · ${score.style}` : score.style);
+      const style = element("div", "style", tags?.family || `${label} · ${styleName(score.style)}`);
       const beat = score.tempo.beat_unit === "dotted_quarter" ? " dotted quarter" : "";
       const bars = `${score.bars} ${score.bars === 1 ? "bar" : "bars"}`;
-      const metadata = element("p", "meta", `${score.meter} · ${score.tempo.bpm}${beat} BPM · ${bars}`);
-      const button = element("button", "play", "Play");
+      const grouping = score.grouping ? ` (${score.grouping.join("+")})` : "";
+      const metadata = element("p", "meta", `${score.meter}${grouping} · ${score.tempo.bpm}${beat} BPM · ${bars}`);
+      const button = element("button", "play", "Play loop");
       button.type = "button";
       const head = element("div", "card-head");
       const info = element("div");
       info.append(style, metadata);
       head.append(info, button);
 
-      const { bar, pulse, total } = timing(score);
+      const { bar, unit, groups, total } = timing(score);
       const timeline = element("div", "timeline");
       timeline.setAttribute("role", "img");
-      timeline.style.setProperty("--bar", `${100 * bar / total}%`);
-      timeline.style.setProperty("--beat", `${100 * pulse / total}%`);
+      const guides = element("div", "measure-guides");
+      for (let barStart = 0; barStart < total; barStart += bar) {
+        let tick = barStart;
+        for (const group of groups) {
+          const mark = element("i", tick === barStart ? "barline" : "");
+          mark.style.left = `${100 * tick / total}%`;
+          guides.append(mark);
+          tick += group * unit;
+        }
+      }
+      timeline.append(guides);
       const voices = new Map();
       for (const event of score.events) {
         if (!voices.has(event.instrument)) voices.set(event.instrument, []);
@@ -238,7 +276,8 @@
           const hit = element("span", "hit");
           hit.style.setProperty("--tick", `${100 * event.tick / total}%`);
           hit.style.setProperty("--strength", .48 + .52 * event.velocity / 127);
-          hit.title = `${name} at tick ${event.tick}, velocity ${event.velocity}`;
+          const offset = event.offset ? `, timing offset ${event.offset}` : "";
+          hit.title = `${name} at tick ${event.tick}, velocity ${event.velocity}${offset}`;
           track.append(hit);
         }
         row.append(element("span", "lane-label", name), track);
@@ -256,21 +295,29 @@
       details.addEventListener("toggle", () => {
         if (details.open && !json.textContent) json.textContent = JSON.stringify(score, null, 2);
       });
-      card.append(head, element("p", "prompt", prompt), timeline, details);
+      card.append(head, element("p", "prompt", prompt));
+      if (tags?.influences.length) {
+        card.append(element("p", "influence", `Inspired by ${tags.influences.join(" and ")}`));
+      }
+      card.append(timeline, details);
       return card;
     }
 
-    function filterGallery() {
+    function filterGallery(reset = false) {
       if (!catalogLoaded) return;
+      if (reset) pageIndex = 0;
       const terms = byId("search").value.trim().toLowerCase().split(/\s+/);
-      let count = 0;
-      for (const entry of entries) {
-        entry.card.hidden = Boolean(selectedStyle && selectedStyle !== entry.style)
-          || !terms.every(term => entry.search.includes(term));
-        if (!entry.card.hidden) count++;
-      }
-      if (playback?.card.hidden) stopPlayback();
-      galleryStatus.textContent = count ? `${count} of ${entries.length} scores` : "No scores match.";
+      const matches = entries.filter(entry => (!selectedStyle || selectedStyle === entry.score.style)
+        && terms.every(term => entry.search.includes(term)));
+      const offset = pageIndex * pageSize;
+      if (playback && gallery.contains(playback.card)) stopPlayback();
+      gallery.replaceChildren(...matches.slice(offset, offset + pageSize).map(
+        entry => renderScore(entry.prompt, entry.score, "", entry.tags)));
+      galleryStatus.textContent = matches.length
+        ? `${offset + 1}–${Math.min(offset + pageSize, matches.length)} of ${matches.length} scores`
+        : "No scores match.";
+      byId("previous").disabled = pageIndex === 0;
+      byId("next").disabled = offset + pageSize >= matches.length;
     }
 
     async function loadGallery() {
@@ -278,15 +325,26 @@
         const response = await fetch("/training/train.jsonl");
         if (!response.ok) throw new Error("Scores could not be loaded.");
         entries = (await response.text()).trim().split(/\r?\n/).map(line => {
-          const { messages } = JSON.parse(line);
+          const { messages, groove: tags } = JSON.parse(line);
           const prompt = messages[1].content;
           const score = JSON.parse(messages[2].content);
           return {
-            card: renderScore(prompt, score), style: score.style,
-            search: `${prompt} ${score.style} ${score.meter} ${score.tempo.bpm} ${score.bars} bars`.toLowerCase(),
+            prompt, score, tags,
+            search: `${prompt} ${styleName(score.style)} ${score.meter} ${score.tempo.bpm} ${tags.family} ${tags.influences.join(" ")}`.toLowerCase(),
           };
         });
-        gallery.replaceChildren(...entries.map(entry => entry.card));
+        const styles = ["", ...new Set(entries.map(entry => entry.score.style))];
+        for (const style of styles) {
+          const button = element("button", "", style ? styleName(style) : "All");
+          button.type = "button";
+          button.setAttribute("aria-pressed", String(style === ""));
+          button.addEventListener("click", () => {
+            selectedStyle = style;
+            for (const filter of filters.children) filter.setAttribute("aria-pressed", String(filter === button));
+            filterGallery(true);
+          });
+          filters.append(button);
+        }
         catalogLoaded = true;
         filterGallery();
       } catch {
@@ -294,32 +352,28 @@
       }
     }
 
-    for (const button of filters) {
-      button.addEventListener("click", () => {
-        selectedStyle = button.dataset.style;
-        for (const filter of filters) filter.setAttribute("aria-pressed", String(filter === button));
-        filterGallery();
-      });
-    }
-    byId("search").addEventListener("input", filterGallery);
+    byId("search").addEventListener("input", () => filterGallery(true));
+    byId("previous").addEventListener("click", () => { pageIndex--; filterGallery(); });
+    byId("next").addEventListener("click", () => { pageIndex++; filterGallery(); });
 
     byId("generate").addEventListener("submit", async event => {
       event.preventDefault();
       const prompt = byId("prompt").value.trim();
       if (!prompt) return;
       const button = event.submitter;
+      const engine = byId("engine").value;
       button.disabled = true;
       generationStatus.classList.remove("error");
-      generationStatus.textContent = "Waiting for the local model…";
+      generationStatus.textContent = engine === "procedural" ? "Matching a groove…" : "Waiting for the local model…";
       try {
         const response = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, engine }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Generation failed.");
-        const card = renderScore(prompt, result, "Generated");
+        const card = renderScore(prompt, result, engine === "procedural" ? "Procedural" : "Local LLM");
         if (playback && generated.contains(playback.card)) stopPlayback();
         generated.replaceChildren(card);
         generated.hidden = false;
@@ -335,10 +389,11 @@
     function stopPlayback() {
       playRequest++;
       if (!playback) return;
-      const { card, button, output, frame, sources } = playback;
+      const { card, button, output, frame, interval, sources } = playback;
       cancelAnimationFrame(frame);
+      clearInterval(interval);
       card.classList.remove("playing");
-      button.textContent = "Play";
+      button.textContent = "Play loop";
       const now = audio.currentTime;
       output.gain.setTargetAtTime(0, now, .012);
       for (const [source, end] of sources) {
@@ -376,23 +431,51 @@
       const output = audio.createGain();
       output.gain.value = .76;
       output.connect(compressor);
-      playback = { card, button, output, sources: [] };
-      for (const [index, hit] of score.events.entries()) {
-        const nextHat = hit.instrument === "open_hat"
-          ? score.events.slice(index + 1).find(event => event.instrument.endsWith("_hat")) : null;
-        const choke = nextHat ? (nextHat.tick - hit.tick) * secondsPerTick : Infinity;
-        drum(playback, hit.instrument, start + hit.tick * secondsPerTick, hit.velocity / 127, choke);
+      const hits = score.events.map(event => ({
+        instrument: event.instrument,
+        volume: event.velocity / 127,
+        time: (event.tick + (event.offset || 0)) * secondsPerTick,
+      })).sort((a, b) => a.time - b.time);
+      let nextHat = (hits.find(hit => hit.instrument.endsWith("_hat"))?.time ?? Infinity) + duration;
+      for (let index = hits.length - 1; index >= 0; index--) {
+        const hit = hits[index];
+        if (hit.instrument === "open_hat") hit.choke = nextHat - hit.time;
+        if (hit.instrument.endsWith("_hat")) nextHat = hit.time;
       }
+
+      const active = { card, button, output, sources: [] };
+      playback = active;
+      let cycle = 0;
+      let index = 0;
+      function schedule() {
+        const now = audio.currentTime;
+        active.sources = active.sources.filter(([, end]) => end > now);
+        const currentCycle = Math.floor((now - start) / duration);
+        if (currentCycle > cycle) {
+          cycle = currentCycle;
+          index = 0;
+        }
+        while (true) {
+          const hit = hits[index];
+          const time = start + cycle * duration + hit.time;
+          if (time > now + .26) break;
+          if (time >= now) drum(active, hit.instrument, time, hit.volume, hit.choke);
+          index++;
+          if (index === hits.length) {
+            index = 0;
+            cycle++;
+          }
+        }
+      }
+
       card.classList.add("playing");
       button.textContent = "Stop";
+      active.interval = setInterval(schedule, 32);
+      schedule();
       function advance() {
-        const elapsed = audio.currentTime - start;
-        if (elapsed > duration + .25) {
-          stopPlayback();
-          return;
-        }
-        cursor.style.left = `${Math.min(100, Math.max(0, elapsed / duration * 100))}%`;
-        playback.frame = requestAnimationFrame(advance);
+        const elapsed = Math.max(0, audio.currentTime - start);
+        cursor.style.left = `${100 * (elapsed % duration) / duration}%`;
+        active.frame = requestAnimationFrame(advance);
       }
       advance();
     }
@@ -450,6 +533,19 @@
           break;
         case "open_hat":
           burst(active, time, .37 * volume, Math.max(.008, Math.min(.27, choke)), 6600, "highpass");
+          break;
+        case "foot_hat":
+          burst(active, time, .28 * volume, .065, 6200, "highpass");
+          break;
+        case "cowbell":
+          tone(active, time, .26 * volume, .14, 562, 556, "square");
+          tone(active, time, .15 * volume, .11, 823, 819, "sine");
+          break;
+        case "clave":
+          tone(active, time, .32 * volume, .06, 2130, 1830, "triangle");
+          break;
+        case "shaker":
+          burst(active, time, .21 * volume, .092, 8900, "highpass");
           break;
         case "ride":
           burst(active, time, .22 * volume, .25, 4600, "bandpass");
