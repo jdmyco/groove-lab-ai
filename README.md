@@ -9,7 +9,7 @@ mise install
 go run .
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). Each card pairs a prompt with a drum timeline, a continuous loop, and the score JSON. Written onsets stay on the grid while playback uses the score's timing offsets. Grouped meters show their accent counts and group boundaries.
+Open [localhost:8080](http://127.0.0.1:8080). Pick a groove from the library to open the drum sheet, or choose Preview to hear its loop. Written onsets stay on the staff grid while playback uses the score's timing offsets. The score header gives the meter, grouping, tempo, and bar count. Description, feel, and timing appear below the sheet and in the score JSON's `metadata` object.
 
 ## Generate and compare
 
@@ -32,6 +32,12 @@ mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8765 \
 
 Pass `--adapter-path PATH` to the model server once the adapter is available. The Go app expects JSON score text in `choices[0].message.content` and feeds validation errors back to the model for up to three attempts in total.
 
+## FormKit score and sound
+
+The library and player reuse FormKit's dark and light palettes, Inter type, Bravura-based music glyphs, SVG drum-score renderer, sample-clock worklet, and Virtuosity Drums kit. GrooveScoreV1 written groups set the staff beaming in compound and mixed eighth-note meters. The audio clock uses each hit's sounding onset after its timing offset. A middle tom has its own staff position and uses the kit's low-tom sample.
+
+The checked-in assets are bundled from [the pinned FormKit revision](assets/formkit/SOURCE.txt) and served by Go. To refresh them from a FormKit checkout with its locked dependencies installed, run `node formkit/sync.mjs ~/workspace/formkit`. The Go server runs independently of that checkout. [Acoustic kit credits](assets/formkit/audio/CREDITS.md) · [Music font license](assets/formkit/BopkitMusic-LICENSE.txt)
+
 ## Fine-tuning corpus
 
 [training/train.jsonl](training/train.jsonl) contains 500 original loop arrangements in 28 families across rock, funk, blues, jazz, Latin, soul, disco, reggae, hip-hop, and fusion. It covers 3/4, 4/4, 5/4, 6/8, 7/8, 7/4, and 12/8. Every example has a practice-length phrase and a stable timekeeping part. Toms occur as part of recurring rhythmic figures. The 5/4 and 7/8 families each have two accent groupings.
@@ -45,7 +51,7 @@ Artist tags describe stylistic references for newly arranged drum parts. The cor
 - Horacio Hernández's clave-centered independence and Airto Moreira's Brazilian vocabulary. [Conversations in Clave](https://hudsonmusic.com/product/conversations-in-clave/) · [Airto Moreira interview](https://daily.redbullmusicacademy.com/2017/06/interview-airto-moreira/)
 - Gavin Harrison's accent groupings and Carlton Barrett's one-drop practice. [Harrison's groupings lesson](https://www.drumeo.com/beat/?p=7967) · [Carlton Barrett profile](https://thereggaemuseum.com/musician/carlton-barrett/)
 
-The JSONL uses [MLX LM chat records](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md#data). Each row contains a shared system message, a natural-language request, and the compact score JSON as the assistant message. The separate `groove` object identifies the family, feel, influences, and cycle length. Use `--data training --mask-prompt` for QLoRA with a quantized checkpoint. Keep related families together when splitting data. For comparison, use the same unseen prompts for both engines and score prompt adherence, timing validity, and groove feel separately.
+The JSONL uses [MLX LM chat records](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md#data). Each row contains a shared system message, a natural-language request, and the compact score JSON as the assistant message. The score's `metadata` describes the beat, feel, and timing. The JSONL row's separate `groove` object identifies the catalog family, sound, influences, and cycle length used by the matcher. Use `--data training --mask-prompt` for QLoRA with a quantized checkpoint. Keep related families together when splitting data. For comparison, use the same unseen prompts for both engines and score prompt adherence, timing validity, and groove feel separately.
 
 ## Checks
 

@@ -16,7 +16,7 @@ rows = []
 patterns = set()
 
 
-def read_cell(cell, bar, unit, index, accents, lag, light_kick):
+def read_cell(cell, bar, unit, index, accents, lag, style):
     for part in cell.split(";"):
         if not part.strip():
             continue
@@ -26,8 +26,10 @@ def read_cell(cell, bar, unit, index, accents, lag, light_kick):
             tick = int(mark.rstrip("*")) * unit
             accent = mark.endswith("*") or symbol in "horcvz" and tick in accents
             displacement = lag if symbol == "s" else 0
+            if style == "hip_hop" and symbol in "ho" and tick % 96:
+                displacement = (-2, 3, 1, -3, 2)[(int(mark.rstrip("*")) + index) % 5]
             level = base + (12 if accent else 0) + (2, -6, 1, -9, -2)[(position + index) % 5]
-            if symbol == "k" and light_kick:
+            if symbol == "k" and style == "jazz":
                 level -= 48
             event = dict(tick=bar + tick, instrument=voice, velocity=level)
             if displacement:
@@ -70,7 +72,7 @@ def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
             for bar in range(bars):
                 for cell in (phrase(timekeeper, bar), phrase(response, bar), phrase(hands, bar)):
                     events.extend(read_cell(cell, bar * bar_ticks, unit, response_index,
-                                            count, lag, style == "jazz"))
+                                            count, lag, style))
             events.sort(key=lambda e: (e["tick"], e["instrument"]))
             audit(events, name, bar_ticks, bars, bpm, beat_unit, count)
 
@@ -100,17 +102,38 @@ def family(name, style, meter, base_bpm, feel, hook, top, kick, *,
                 score["grouping"] = grouping
             score.update(tempo={"bpm": bpm, "beat_unit": beat_unit}, bars=bars,
                          ticks_per_quarter=96, events=events)
+            score["metadata"] = {
+                "description": f"A looping {name} groove with {color}. {hook}",
+                "feel": feel,
+                "timing": timing_description(style, meter, unit, grouping, lag),
+            }
             rows.append({
                 "messages": [
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": json.dumps(score, separators=(",", ":"))},
+                    {"role": "assistant", "content": json.dumps(score, ensure_ascii=False, separators=(",", ":"))},
                 ],
                 "groove": {
                     "family": name, "feel": feel, "color": color,
                     "influences": artists, "cycle_bars": phrase_bars,
                 },
             })
+
+
+def timing_description(style, meter, unit, grouping, lag):
+    if style == "hip_hop":
+        return "Dilla-inspired pocket with uneven hat offsets and a late snare backbeat."
+    if meter in ("6/8", "12/8"):
+        return "Compound eighths grouped in threes, with an accent at each group start."
+    group_text = "+".join(map(str, grouping))
+    if unit == 32:
+        pulse = f" Accent the {group_text} groups." if grouping else ""
+        return "Written triplet subdivisions give the offbeats a long-short swing." + pulse
+    if grouping:
+        return f"Straight subdivisions with accents grouped {group_text}."
+    if lag:
+        return f"Straight timekeeping with the written snare delayed by {lag} ticks."
+    return "Straight written subdivisions with accents set by hit velocity."
 
 
 def audit(events, name, bar_ticks, bars, bpm, beat_unit, accents):

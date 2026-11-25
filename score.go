@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
+	"unicode/utf8"
 )
 
 type Tempo struct {
@@ -20,15 +22,22 @@ type Event struct {
 	Offset     int    `json:"offset,omitzero"`
 }
 
+type ScoreMetadata struct {
+	Description string `json:"description"`
+	Feel        string `json:"feel,omitempty"`
+	Timing      string `json:"timing,omitempty"`
+}
+
 type Score struct {
-	SchemaVersion   string  `json:"schema_version"`
-	Style           string  `json:"style"`
-	Meter           string  `json:"meter"`
-	Grouping        []int   `json:"grouping,omitempty"`
-	Tempo           Tempo   `json:"tempo"`
-	Bars            int     `json:"bars"`
-	TicksPerQuarter int     `json:"ticks_per_quarter"`
-	Events          []Event `json:"events"`
+	SchemaVersion   string         `json:"schema_version"`
+	Style           string         `json:"style"`
+	Meter           string         `json:"meter"`
+	Grouping        []int          `json:"grouping,omitempty"`
+	Tempo           Tempo          `json:"tempo"`
+	Bars            int            `json:"bars"`
+	TicksPerQuarter int            `json:"ticks_per_quarter"`
+	Events          []Event        `json:"events"`
+	Metadata        *ScoreMetadata `json:"metadata,omitempty"`
 }
 
 func parseScore(raw []byte) (Score, error) {
@@ -103,6 +112,13 @@ func validateScore(score Score) error {
 	if score.Tempo.BeatUnit != "quarter" &&
 		score.Tempo.BeatUnit != "dotted_quarter" {
 		return errors.New("tempo beat_unit must be quarter or dotted_quarter")
+	}
+
+	if m := score.Metadata; m != nil {
+		if strings.TrimSpace(m.Description) == "" || utf8.RuneCountInString(m.Description) > 360 ||
+			utf8.RuneCountInString(m.Feel) > 120 || utf8.RuneCountInString(m.Timing) > 220 {
+			return errors.New("metadata requires a description up to 360 characters, with feel up to 120 and timing up to 220")
+		}
 	}
 
 	if len(score.Events) < 1 || len(score.Events) > 256 {
@@ -196,4 +212,48 @@ func tempoAllowsHands(tempo Tempo, tickGap int) bool {
 		beat = 144
 	}
 	return tickGap*60000 >= 48*tempo.BPM*beat
+}
+
+// Supplies a factual description for model endpoints that still emit the earlier score shape.
+func describeScore(score *Score) {
+	if m := score.Metadata; m != nil && strings.TrimSpace(m.Feel) != "" && strings.TrimSpace(m.Timing) != "" {
+		return
+	}
+	voices := make(map[string]bool)
+	straight, triplet, offset := true, true, false
+	for _, event := range score.Events {
+		voices[strings.ReplaceAll(event.Instrument, "_", " ")] = true
+		straight = straight && *event.Tick%24 == 0
+		triplet = triplet && *event.Tick%32 == 0
+		offset = offset || event.Offset != 0
+	}
+	names := make([]string, 0, len(voices))
+	for voice := range voices {
+		names = append(names, voice)
+	}
+	slices.Sort(names)
+	feel, timing := "Written pulse", "Written hit positions set the pulse."
+	switch {
+	case score.Meter == "6/8" || score.Meter == "12/8":
+		feel, timing = "Compound meter", "Compound eighth-note pulse."
+	case triplet && !straight:
+		feel, timing = "Triplet movement", "Triplet subdivisions."
+	case straight:
+		feel, timing = "Straight pulse", "Straight written subdivisions."
+	}
+	if offset {
+		feel += " with microtiming"
+		timing += " Individual timing offsets shape the playback feel."
+	}
+	if score.Metadata == nil {
+		score.Metadata = &ScoreMetadata{
+			Description: fmt.Sprintf("A %s %s drum loop with %s.", score.Meter, strings.ReplaceAll(score.Style, "_", "-"), strings.Join(names, ", ")),
+		}
+	}
+	if strings.TrimSpace(score.Metadata.Feel) == "" {
+		score.Metadata.Feel = feel
+	}
+	if strings.TrimSpace(score.Metadata.Timing) == "" {
+		score.Metadata.Timing = timing
+	}
 }

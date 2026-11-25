@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,8 +77,9 @@ func TestGenerateRetriesMalformedScores(t *testing.T) {
 	if response.Code != 200 || calls.Load() != 3 {
 		t.Fatalf("got HTTP %d after %d calls: %s", response.Code, calls.Load(), response.Body)
 	}
-	if _, err := parseScore(response.Body.Bytes()); err != nil {
-		t.Fatal(err)
+	if score, err := parseScore(response.Body.Bytes()); err != nil || score.Metadata == nil ||
+		score.Metadata.Feel == "" || score.Metadata.Timing == "" {
+		t.Fatalf("model response should include score metadata: %v", err)
 	}
 }
 
@@ -150,7 +152,10 @@ func TestTrainingCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("row %d: %v", index+1, err)
 		}
-		canonical, err := json.Marshal(score)
+		if score.Metadata == nil || score.Metadata.Feel == "" || score.Metadata.Timing == "" {
+			t.Fatalf("row %d is missing musical metadata", index+1)
+		}
+		canonical, err := jsonv2.Marshal(score)
 		if err != nil || string(canonical) != rawScore {
 			t.Fatalf("row %d is not a compact, sorted score", index+1)
 		}
@@ -368,6 +373,72 @@ func TestProceduralLanguageClauses(t *testing.T) {
 			return strings.HasPrefix(event.Instrument, "tom_")
 		}) {
 			t.Error("returned excluded toms")
+		}
+	}
+}
+
+func TestGeneratedScoreMetadata(t *testing.T) {
+	handler := newHandler(modelClient{})
+	for _, tc := range []struct {
+		prompt, expected string
+	}{
+		{"One bar of jazz waltz", "triplet"},
+		{"One bar of dusty hip-hop", "Dilla-inspired"},
+	} {
+		body, _ := json.Marshal(map[string]string{"prompt": tc.prompt, "engine": "procedural"})
+		response := generateRequest(handler, string(body))
+		var score struct {
+			Metadata struct {
+				Description string `json:"description"`
+				Feel        string `json:"feel"`
+				Timing      string `json:"timing"`
+			} `json:"metadata"`
+		}
+		if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &score) != nil ||
+			score.Metadata.Description == "" || score.Metadata.Feel == "" ||
+			!strings.Contains(score.Metadata.Timing, tc.expected) {
+			t.Errorf("%s missing useful metadata: %+v, HTTP %d", tc.prompt, score.Metadata, response.Code)
+		}
+	}
+}
+
+func TestScoreMetadataValidation(t *testing.T) {
+	raw := strings.TrimSuffix(validScore, "}") + `,"metadata":{"description":"","feel":"swing"}}`
+	if _, err := parseScore([]byte(raw)); err == nil {
+		t.Fatal("accepted an empty beat description")
+	}
+	raw = strings.Replace(raw, `"description":""`, `"description":"A two-pulse blues loop."`, 1)
+	if _, err := parseScore([]byte(raw)); err != nil {
+		t.Fatalf("rejected score metadata: %v", err)
+	}
+}
+
+func TestEmbeddedFormKitKit(t *testing.T) {
+	handler := newHandler(modelClient{})
+	get := func(path string) []byte {
+		t.Helper()
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned HTTP %d", path, response.Code)
+		}
+		return response.Body.Bytes()
+	}
+	for _, file := range []string{"formkit.js", "groove-worklet.js", "groove-clock.js", "theme.css", "BopkitMusic.woff"} {
+		if len(get("/assets/formkit/"+file)) == 0 {
+			t.Fatalf("empty FormKit asset: %s", file)
+		}
+	}
+	var kit struct {
+		Samples []struct{ File string }
+	}
+	if err := json.Unmarshal(get("/audio/manifest.json"), &kit); err != nil || len(kit.Samples) == 0 {
+		t.Fatalf("missing FormKit sample manifest: %v", err)
+	}
+	for _, sample := range kit.Samples {
+		body := get("/audio/" + sample.File)
+		if len(body) <= 44 || string(body[:4]) != "RIFF" || string(body[8:12]) != "WAVE" {
+			t.Fatalf("missing WAV audio for %s", sample.File)
 		}
 	}
 }

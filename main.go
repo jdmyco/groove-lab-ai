@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"net"
@@ -20,6 +21,9 @@ import (
 
 //go:embed index.html
 var page []byte
+
+//go:embed assets/formkit
+var formkitAssets embed.FS
 
 //go:embed training/train.jsonl
 var corpus []byte
@@ -94,6 +98,12 @@ func newHandler(model modelClient) http.Handler {
 		w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
 		_, _ = w.Write(corpus)
 	})
+	mux.Handle("GET /assets/formkit/", http.FileServerFS(formkitAssets))
+	kit, err := fs.Sub(formkitAssets, "assets/formkit/audio")
+	if err != nil {
+		panic(err)
+	}
+	mux.Handle("GET /audio/", http.StripPrefix("/audio/", http.FileServerFS(kit)))
 	mux.HandleFunc("POST /api/generate", model.handleGenerate)
 	return mux
 }
@@ -153,6 +163,7 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		}
 		score, err := parseScore([]byte(content))
 		if err == nil {
+			describeScore(&score)
 			writeJSON(w, http.StatusOK, score)
 			return
 		}
