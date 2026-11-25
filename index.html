@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:,">
+  <title>Groove Lab</title>
+  <style>
+    :root {
+      font-family: "Avenir Next", system-ui, sans-serif;
+      color: #edf1eb;
+      background: #111518;
+      color-scheme: dark;
+      --panel: #191f23;
+      --border: #343e43;
+      --muted: #aebbbd;
+      --accent: #e1f46a;
+      --mono: ui-monospace, "SF Mono", Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, input, textarea { font: inherit; }
+    button, summary { cursor: pointer; }
+    button:disabled { opacity: .65; cursor: wait; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    a { color: inherit; }
+    .wrap { width: min(1168px, 100% - 48px); margin-inline: auto; }
+    header { border-bottom: 1px solid var(--border); }
+    .masthead {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; min-height: 64px; font-weight: 700;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; letter-spacing: -.025em; }
+    .mark { display: flex; align-items: end; gap: 3px; height: 16px; }
+    .mark i { width: 4px; border-radius: 1px; background: var(--accent); }
+    .mark i:nth-child(1) { height: 7px; }
+    .mark i:nth-child(2) { height: 16px; }
+    .mark i:nth-child(3) { height: 11px; }
+    .download { color: var(--muted); font-size: .875rem; text-underline-offset: 4px; }
+    .download:hover { color: var(--accent); }
+    .compose {
+      margin: 34px 0 0; padding: clamp(20px, 4vw, 34px);
+      display: grid; align-items: center; gap: 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+      background: linear-gradient(120deg, #252d26, var(--panel) 65%);
+      border: 1px solid #3b473b; border-radius: 16px;
+    }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.05; letter-spacing: -.07em; }
+    .compose form { display: grid; gap: 10px; }
+    .input-label { font-size: .875rem; font-weight: 650; }
+    textarea, input[type="search"] {
+      background: #13181b; color: inherit; border: 1px solid #49555a; border-radius: 8px;
+    }
+    textarea { line-height: 1.45; padding: 12px; width: 100%; min-height: 74px; resize: vertical; }
+    textarea::placeholder, input::placeholder { color: #a0afb0; }
+    .submit {
+      justify-self: start; padding: 9px 16px; min-height: 42px; background: var(--accent);
+      color: #151914; border: 1px solid transparent; border-radius: 8px; font-weight: 750;
+    }
+    .submit:hover:enabled { background: #efffa2; }
+    .status { color: var(--muted); font-size: .875rem; }
+    .status:empty { display: none; }
+    .status.error { color: #ffc0a7; }
+    #generated { margin-top: 16px; }
+    #generated .card { border-color: #687646; }
+    #generated .prompt { min-height: 0; }
+    .library { margin-block: 34px 48px; }
+    .section-head {
+      display: flex; align-items: baseline; justify-content: space-between;
+      flex-wrap: wrap; gap: 8px 16px; margin-bottom: 14px;
+    }
+    h2 { font-size: 1.85rem; letter-spacing: -.055em; }
+    .tools { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; margin-bottom: 16px; }
+    .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filters button, .play {
+      min-height: 38px; color: inherit; border: 1px solid var(--border); background: #20272b;
+      border-radius: 7px; padding: 6px 12px; font-size: .875rem; font-weight: 650;
+    }
+    .filters button:hover, .play:hover { border-color: var(--accent); }
+    .filters button[aria-pressed="true"], .playing .play {
+      background: var(--accent); border-color: var(--accent); color: #141a13;
+    }
+    input[type="search"] { width: min(100%, 240px); min-height: 38px; padding: 6px 11px; }
+    .gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    .card { min-width: 0; padding: 15px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+    .card.playing { border-color: var(--accent); }
+    .card-head { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+    .style { font-size: .875rem; font-weight: 750; color: var(--accent); text-transform: capitalize; }
+    .meta { font: .75rem var(--mono); color: var(--muted); margin-top: 3px; }
+    .play { flex: none; padding-inline: 10px; }
+    .play::before {
+      content: ""; display: inline-block; width: 0; height: 0; margin-right: 6px;
+      border-block: 4px solid transparent; border-left: 6px solid currentColor;
+    }
+    .playing .play::before { width: 7px; height: 7px; border: none; background: currentColor; }
+    .prompt { font-size: .95rem; line-height: 1.42; color: #e1e8e5; min-height: 4.25em; overflow-wrap: anywhere; }
+    .timeline {
+      position: relative; margin-top: 12px; padding: 5px 6px;
+      border: 1px solid #30393b; border-radius: 6px; background: #121719;
+    }
+    .lane { display: grid; align-items: center; grid-template-columns: 49px minmax(0, 1fr); gap: 3px; min-height: 14px; }
+    .lane-label { font: .625rem var(--mono); color: #a9b6b6; white-space: nowrap; }
+    .track {
+      position: relative; height: 11px; overflow: hidden;
+      background-image: linear-gradient(to right, #727f72 1px, transparent 1px),
+                        linear-gradient(to right, #2c3739 1px, transparent 1px);
+      background-size: var(--bar) 100%, var(--beat) 100%;
+    }
+    .hit {
+      position: absolute; left: var(--tick); top: 2px; width: 4px; height: 7px;
+      border-radius: 1px; background: var(--voice); opacity: var(--strength);
+    }
+    .playhead {
+      position: absolute; inset: 5px 6px 5px 58px; pointer-events: none; visibility: hidden;
+    }
+    .playing .playhead { visibility: visible; }
+    .playhead i { position: absolute; inset-block: 0; width: 1px; background: var(--accent); }
+    details { margin-top: 8px; color: var(--muted); font-size: .8125rem; }
+    summary { width: fit-content; padding-block: 4px; }
+    pre {
+      max-height: 230px; overflow: auto; margin: 5px 0 0; padding: 10px;
+      font: .75rem/1.5 var(--mono); background: #121719; border-radius: 6px;
+    }
+    @media (max-width: 920px) { .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 620px) {
+      .wrap { width: calc(100% - 28px); }
+      .masthead { min-height: 54px; }
+      .compose { grid-template-columns: 1fr; margin-top: 20px; gap: 18px; }
+      .library { margin-top: 26px; }
+      .gallery { grid-template-columns: 1fr; }
+      .prompt { min-height: 0; }
+      input[type="search"] { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap masthead">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Groove Lab</div>
+      <a class="download" href="/training/train.jsonl" download="train.jsonl">Download training JSONL</a>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="compose" aria-labelledby="composer-heading">
+      <h1 id="composer-heading">Write a drum groove</h1>
+      <form id="generate">
+        <label class="input-label" for="prompt">Describe a groove</label>
+        <textarea id="prompt" required maxlength="1000" placeholder="Make me a funky upbeat groove with a snappy backbeat."></textarea>
+        <button class="submit" type="submit">Generate groove</button>
+        <p id="generation-status" class="status" role="status"></p>
+      </form>
+    </section>
+    <section id="generated" aria-label="Generated score" hidden></section>
+    <section class="library" aria-labelledby="library-heading">
+      <div class="section-head">
+        <h2 id="library-heading">Score gallery</h2>
+        <p id="gallery-status" class="status" role="status">Loading scores…</p>
+      </div>
+      <div class="tools">
+        <div class="filters" role="group" aria-label="Filter by style">
+          <button type="button" data-style="" aria-pressed="true">All</button>
+          <button type="button" data-style="rock" aria-pressed="false">Rock</button>
+          <button type="button" data-style="funk" aria-pressed="false">Funk</button>
+          <button type="button" data-style="blues" aria-pressed="false">Blues</button>
+          <button type="button" data-style="jazz" aria-pressed="false">Jazz</button>
+        </div>
+        <input id="search" type="search" aria-label="Search prompts and scores" placeholder="Search prompts or meters">
+      </div>
+      <div id="gallery" class="gallery"></div>
+    </section>
+  </main>
+  <script>
+    const kit = {
+      kick: ["Kick", "#f5b87b"], snare: ["Snare", "#ff977e"], rim: ["Rim", "#ffc0a5"],
+      closed_hat: ["Cl. hat", "#d7e87d"], open_hat: ["Op. hat", "#d7e87d"],
+      ride: ["Ride", "#8ce0d0"], crash: ["Crash", "#a7d5f5"],
+      tom_high: ["Hi tom", "#d4b4fc"], tom_mid: ["Mid tom", "#d4b4fc"], tom_low: ["Lo tom", "#d4b4fc"],
+    };
+    const byId = id => document.getElementById(id);
+    const gallery = byId("gallery");
+    const galleryStatus = byId("gallery-status");
+    const generationStatus = byId("generation-status");
+    const generated = byId("generated");
+    const filters = [...document.querySelectorAll(".filters button")];
+    let entries = [];
+    let selectedStyle = "";
+    let catalogLoaded = false;
+    let audio, noise, compressor, playback, playRequest = 0;
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function timing(score) {
+      const [numerator, denominator] = score.meter.split("/").map(Number);
+      const quarter = score.ticks_per_quarter;
+      const bar = numerator * quarter * 4 / denominator;
+      const pulse = denominator === 8 ? quarter * 1.5 : quarter;
+      const tempoBeat = score.tempo.beat_unit === "dotted_quarter" ? quarter * 1.5 : quarter;
+      return { bar, pulse, total: bar * score.bars, secondsPerTick: 60 / score.tempo.bpm / tempoBeat };
+    }
+
+    function renderScore(prompt, score, label) {
+      const card = element("article", "card");
+      const style = element("div", "style", label ? `${label} · ${score.style}` : score.style);
+      const beat = score.tempo.beat_unit === "dotted_quarter" ? " dotted quarter" : "";
+      const bars = `${score.bars} ${score.bars === 1 ? "bar" : "bars"}`;
+      const metadata = element("p", "meta", `${score.meter} · ${score.tempo.bpm}${beat} BPM · ${bars}`);
+      const button = element("button", "play", "Play");
+      button.type = "button";
+      const head = element("div", "card-head");
+      const info = element("div");
+      info.append(style, metadata);
+      head.append(info, button);
+
+      const { bar, pulse, total } = timing(score);
+      const timeline = element("div", "timeline");
+      timeline.setAttribute("role", "img");
+      timeline.style.setProperty("--bar", `${100 * bar / total}%`);
+      timeline.style.setProperty("--beat", `${100 * pulse / total}%`);
+      const voices = new Map();
+      for (const event of score.events) {
+        if (!voices.has(event.instrument)) voices.set(event.instrument, []);
+        voices.get(event.instrument).push(event);
+      }
+      timeline.setAttribute("aria-label", `${score.events.length} hits across ${bars}: ${[...voices.keys()].join(", ")}`);
+      for (const [instrument, [name, color]] of Object.entries(kit)) {
+        if (!voices.has(instrument)) continue;
+        const row = element("div", "lane");
+        const track = element("div", "track");
+        track.style.setProperty("--voice", color);
+        for (const event of voices.get(instrument)) {
+          const hit = element("span", "hit");
+          hit.style.setProperty("--tick", `${100 * event.tick / total}%`);
+          hit.style.setProperty("--strength", .48 + .52 * event.velocity / 127);
+          hit.title = `${name} at tick ${event.tick}, velocity ${event.velocity}`;
+          track.append(hit);
+        }
+        row.append(element("span", "lane-label", name), track);
+        timeline.append(row);
+      }
+      const playhead = element("div", "playhead");
+      const cursor = element("i");
+      playhead.append(cursor);
+      timeline.append(playhead);
+      button.addEventListener("click", () => playScore(score, card, button, cursor));
+
+      const details = element("details");
+      const json = element("pre");
+      details.append(element("summary", "", "Score JSON"), json);
+      details.addEventListener("toggle", () => {
+        if (details.open && !json.textContent) json.textContent = JSON.stringify(score, null, 2);
+      });
+      card.append(head, element("p", "prompt", prompt), timeline, details);
+      return card;
+    }
+
+    function filterGallery() {
+      if (!catalogLoaded) return;
+      const terms = byId("search").value.trim().toLowerCase().split(/\s+/);
+      let count = 0;
+      for (const entry of entries) {
+        entry.card.hidden = Boolean(selectedStyle && selectedStyle !== entry.style)
+          || !terms.every(term => entry.search.includes(term));
+        if (!entry.card.hidden) count++;
+      }
+      if (playback?.card.hidden) stopPlayback();
+      galleryStatus.textContent = count ? `${count} of ${entries.length} scores` : "No scores match.";
+    }
+
+    async function loadGallery() {
+      try {
+        const response = await fetch("/training/train.jsonl");
+        if (!response.ok) throw new Error("Scores could not be loaded.");
+        entries = (await response.text()).trim().split(/\r?\n/).map(line => {
+          const { messages } = JSON.parse(line);
+          const prompt = messages[1].content;
+          const score = JSON.parse(messages[2].content);
+          return {
+            card: renderScore(prompt, score), style: score.style,
+            search: `${prompt} ${score.style} ${score.meter} ${score.tempo.bpm} ${score.bars} bars`.toLowerCase(),
+          };
+        });
+        gallery.replaceChildren(...entries.map(entry => entry.card));
+        catalogLoaded = true;
+        filterGallery();
+      } catch {
+        galleryStatus.textContent = "Scores could not be loaded. Reload to try again.";
+      }
+    }
+
+    for (const button of filters) {
+      button.addEventListener("click", () => {
+        selectedStyle = button.dataset.style;
+        for (const filter of filters) filter.setAttribute("aria-pressed", String(filter === button));
+        filterGallery();
+      });
+    }
+    byId("search").addEventListener("input", filterGallery);
+
+    byId("generate").addEventListener("submit", async event => {
+      event.preventDefault();
+      const prompt = byId("prompt").value.trim();
+      if (!prompt) return;
+      const button = event.submitter;
+      button.disabled = true;
+      generationStatus.classList.remove("error");
+      generationStatus.textContent = "Waiting for the local model…";
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Generation failed.");
+        const card = renderScore(prompt, result, "Generated");
+        if (playback && generated.contains(playback.card)) stopPlayback();
+        generated.replaceChildren(card);
+        generated.hidden = false;
+        generationStatus.textContent = "Groove ready to play.";
+      } catch (error) {
+        generationStatus.textContent = error.message;
+        generationStatus.classList.add("error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function stopPlayback() {
+      playRequest++;
+      if (!playback) return;
+      const { card, button, output, frame, sources } = playback;
+      cancelAnimationFrame(frame);
+      card.classList.remove("playing");
+      button.textContent = "Play";
+      const now = audio.currentTime;
+      output.gain.setTargetAtTime(0, now, .012);
+      for (const [source, end] of sources) {
+        if (end > now + .045) source.stop(now + .045);
+      }
+      setTimeout(() => output.disconnect(), 80);
+      playback = null;
+    }
+
+    function initAudio() {
+      audio = new AudioContext();
+      compressor = audio.createDynamicsCompressor();
+      compressor.connect(audio.destination);
+      noise = audio.createBuffer(1, Math.ceil(audio.sampleRate), audio.sampleRate);
+      const samples = noise.getChannelData(0);
+      for (let index = 0; index < samples.length; index++) samples[index] = Math.random() * 2 - 1;
+    }
+
+    async function playScore(score, card, button, cursor) {
+      const wasPlaying = playback?.card === card;
+      stopPlayback();
+      if (wasPlaying) return;
+      const ticket = playRequest;
+      try {
+        if (!audio) initAudio();
+        if (audio.state !== "running") await audio.resume();
+        if (ticket !== playRequest || !card.isConnected || card.hidden) return;
+      } catch {
+        button.textContent = "Audio unavailable";
+        return;
+      }
+      const { total, secondsPerTick } = timing(score);
+      const duration = total * secondsPerTick;
+      const start = audio.currentTime + .055;
+      const output = audio.createGain();
+      output.gain.value = .76;
+      output.connect(compressor);
+      playback = { card, button, output, sources: [] };
+      for (const [index, hit] of score.events.entries()) {
+        const nextHat = hit.instrument === "open_hat"
+          ? score.events.slice(index + 1).find(event => event.instrument.endsWith("_hat")) : null;
+        const choke = nextHat ? (nextHat.tick - hit.tick) * secondsPerTick : Infinity;
+        drum(playback, hit.instrument, start + hit.tick * secondsPerTick, hit.velocity / 127, choke);
+      }
+      card.classList.add("playing");
+      button.textContent = "Stop";
+      function advance() {
+        const elapsed = audio.currentTime - start;
+        if (elapsed > duration + .25) {
+          stopPlayback();
+          return;
+        }
+        cursor.style.left = `${Math.min(100, Math.max(0, elapsed / duration * 100))}%`;
+        playback.frame = requestAnimationFrame(advance);
+      }
+      advance();
+    }
+
+    function envelope(source, output, time, gain, length) {
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(Math.max(.0002, gain), time);
+      amp.gain.exponentialRampToValueAtTime(.0001, time + length);
+      source.connect(amp).connect(output);
+    }
+
+    function tone(active, time, gain, length, from, to, type = "sine") {
+      const oscillator = audio.createOscillator();
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(from, time);
+      oscillator.frequency.exponentialRampToValueAtTime(to, time + length);
+      envelope(oscillator, active.output, time, gain, length);
+      oscillator.start(time);
+      scheduleEnd(active, oscillator, time + length + .005);
+    }
+
+    function burst(active, time, gain, length, frequency, type, q = .7) {
+      const source = audio.createBufferSource();
+      const filter = audio.createBiquadFilter();
+      source.buffer = noise;
+      filter.type = type;
+      filter.frequency.value = frequency;
+      filter.Q.value = q;
+      source.connect(filter);
+      envelope(filter, active.output, time, gain, length);
+      source.start(time, Math.random() * .3);
+      scheduleEnd(active, source, time + length + .005);
+    }
+
+    function scheduleEnd(active, source, time) {
+      source.stop(time);
+      active.sources.push([source, time]);
+    }
+
+    function drum(active, instrument, time, volume, choke) {
+      switch (instrument) {
+        case "kick":
+          tone(active, time, .86 * volume, .21, 146, 42);
+          break;
+        case "snare":
+          burst(active, time, .58 * volume, .17, 2300, "bandpass", .55);
+          tone(active, time, .19 * volume, .09, 198, 142, "triangle");
+          break;
+        case "rim":
+          tone(active, time, .29 * volume, .043, 1280, 601, "triangle");
+          burst(active, time, .22 * volume, .045, 3200, "bandpass");
+          break;
+        case "closed_hat":
+          burst(active, time, .32 * volume, .043, 7600, "highpass");
+          break;
+        case "open_hat":
+          burst(active, time, .37 * volume, Math.max(.008, Math.min(.27, choke)), 6600, "highpass");
+          break;
+        case "ride":
+          burst(active, time, .22 * volume, .25, 4600, "bandpass");
+          tone(active, time, .07 * volume, .21, 2850, 2800, "triangle");
+          tone(active, time, .035 * volume, .15, 4212, 4170);
+          break;
+        case "crash":
+          burst(active, time, .46 * volume, .53, 3600, "highpass");
+          burst(active, time, .19 * volume, .39, 6000, "bandpass");
+          break;
+        case "tom_high":
+        case "tom_mid":
+        case "tom_low": {
+          const pitch = { tom_high: 177, tom_mid: 133, tom_low: 95 }[instrument];
+          tone(active, time, .56 * volume, .21, pitch * 1.32, pitch * .72);
+          burst(active, time, .13 * volume, .07, 1050, "bandpass");
+          break;
+        }
+      }
+    }
+
+    loadGallery();
+  </script>
+</body>
+</html>
