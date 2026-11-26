@@ -181,7 +181,8 @@
         preview.setScore(score, title);
 
         const duration = ((performance.now() - started) / 1000).toFixed(1) + " s";
-        statusText.textContent = withAttempts("Valid score", attempts, duration);
+        const repair = response.headers.get("X-Groove-Repair");
+        statusText.textContent = withAttempts(repair ? "Repaired score (" + repair + ")" : "Valid score", attempts, duration);
       } catch (error) {
         result.hidden = true;
         statusText.textContent = withAttempts(error.message, attempts);

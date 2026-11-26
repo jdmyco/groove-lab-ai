@@ -14,8 +14,7 @@ const comparisonScoreExample = `
 Use the structure in this example and compose a new score matching the user request.
 {"schema_version":"1.0","style":"jazz","meter":"3/4","tempo":{"bpm":110,"beat_unit":"quarter"},"bars":1,"ticks_per_quarter":96,"events":[{"tick":0,"instrument":"ride","velocity":70}],"metadata":{"description":"Ride on the downbeat.","feel":"Spacious","timing":"Straight quarter pulse."}}
 Use only these top-level keys plus grouping when needed. Omit grouping for ungrouped meter.
-Use meter signatures such as "4/4" without a tick count. Write absolute integer ticks from 0 through one less than the total loop length.
-A single 4/4 bar is 384 ticks long, so its valid event ticks are 0 through 383. The next repeat starts automatically at tick 0. Omit a closing hit at the loop length.
+Use meter signatures such as "4/4" without a tick count and write ticks as integers.
 In 4/4, beats 1 through 4 are at ticks 0, 96, 192, and 288 of each bar. Use closed_hat or open_hat for stick hi-hat hits.
 Return the raw JSON object only, without Markdown or additional prose.`
 

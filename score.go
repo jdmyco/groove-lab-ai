@@ -57,14 +57,18 @@ func parseScore(raw []byte) (Score, error) {
 	if err := validateScore(score); err != nil {
 		return Score{}, err
 	}
-	sort.Slice(score.Events, func(i, j int) bool {
-		a, b := score.Events[i], score.Events[j]
+	sortScoreEvents(score.Events)
+	return score, nil
+}
+
+func sortScoreEvents(events []Event) {
+	sort.Slice(events, func(i, j int) bool {
+		a, b := events[i], events[j]
 		if *a.Tick == *b.Tick {
 			return a.Instrument < b.Instrument
 		}
 		return *a.Tick < *b.Tick
 	})
-	return score, nil
 }
 
 var styles = []string{"rock", "funk", "blues", "jazz", "latin", "soul", "disco", "reggae", "hip_hop", "fusion"}

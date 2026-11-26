@@ -206,12 +206,15 @@ func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, instr
 			}
 			return
 		}
-		score, err := parseScore([]byte(content))
+		score, repair, err := parseGeneratedScore([]byte(content))
 		if err == nil {
 			err = verifyHitCounts(score, counts)
 		}
 		if err == nil {
 			describeScore(&score)
+			if repair != "" {
+				w.Header().Set("X-Groove-Repair", repair)
+			}
 			writeJSON(w, http.StatusOK, score)
 			return
 		}

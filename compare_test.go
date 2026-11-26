@@ -32,18 +32,11 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 			if (call > 1) != strings.Contains(payload.Messages[1].Content, "Previous attempt failed validation") {
 				t.Errorf("wrong retry feedback on call %d", call)
 			}
-			if call == 2 && !strings.Contains(payload.Messages[1].Content, `unknown object member name "description"`) {
-				t.Errorf("missing the unexpected field in retry feedback: %s", payload.Messages[1].Content)
+			if call == 2 && !strings.Contains(payload.Messages[1].Content, "Go main.Tempo") {
+				t.Errorf("missing invalid tempo field in retry feedback: %s", payload.Messages[1].Content)
 			}
 			if call == 3 && !strings.Contains(payload.Messages[1].Content, "expected 1 kick hit, got 0") {
 				t.Errorf("missing count failure on retry: %s", payload.Messages[1].Content)
-			}
-			if call == 4 && (!strings.Contains(payload.Messages[1].Content, "0 through 383") ||
-				!strings.Contains(payload.Messages[1].Content, "Playback already loops back to tick 0")) {
-				t.Errorf("missing loop-boundary correction: %s", payload.Messages[1].Content)
-			}
-			if call == 5 && !strings.Contains(payload.Messages[1].Content, "Use closed_hat or open_hat for stick hi-hat hits") {
-				t.Errorf("missing canonical hi-hat guidance: %s", payload.Messages[1].Content)
 			}
 			content := responses[min(call, len(responses))-1]
 			_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
@@ -53,10 +46,8 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 	}
 	withoutKick := strings.Replace(validScore, `,{"tick":0,"instrument":"kick","velocity":110}`, "", 1)
 	louder := strings.Replace(validScore, `"velocity":110`, `"velocity":118`, 1)
-	wrongShape := strings.Replace(validScore, `"bars":1`, `"description":"wrong location","bars":1`, 1)
-	atBoundary := strings.NewReplacer(`"meter":"6/8"`, `"meter":"4/4"`, `"tick":144`, `"tick":384`).Replace(validScore)
-	wrongVoice := strings.Replace(validScore, `"instrument":"snare"`, `"instrument":"hi_hat"`, 1)
-	base := stub("base-test", &baseCalls, wrongShape, withoutKick, atBoundary, wrongVoice, validScore)
+	wrongShape := strings.Replace(validScore, `"tempo":{"bpm":62,"beat_unit":"dotted_quarter"}`, `"tempo":"slow"`, 1)
+	base := stub("base-test", &baseCalls, wrongShape, withoutKick, "malformed", "malformed", validScore)
 	defer base.Close()
 	adapted := stub("adapted-test", &adaptedCalls, wrongShape, withoutKick, louder)
 	defer adapted.Close()

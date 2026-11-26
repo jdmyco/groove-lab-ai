@@ -378,7 +378,8 @@
         const score = await response.json();
         if (!response.ok) throw new Error(score.error || "Generation failed.");
         showScore({ prompt, score, label: engine === "procedural" ? "Procedural" : "Local LLM" });
-        status.textContent = "Groove ready to play.";
+        const repair = response.headers.get("X-Groove-Repair");
+        status.textContent = repair ? "Groove ready to play. " + repair + "." : "Groove ready to play.";
       } catch (error) {
         status.textContent = error.message;
         status.classList.add("error");
