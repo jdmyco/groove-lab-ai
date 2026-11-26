@@ -1,15 +1,25 @@
 # Groove Lab
 
-Groove Lab is a local drum-groove gallery and comparison app. One Go server serves the gallery, the 1,330-groove catalog, and procedural and local-model generation.
+Generate, inspect, and play drum grooves in your browser. Groove Lab includes a 1,330-groove catalog, a procedural generator, and a comparison page for base Qwen and a fine-tuned MLX adapter.
 
-## Run the gallery
+## Quick start
+
+Use Go 1.27.3 or later. The commands below use `mise` to install the pinned Go version. If you already have Go installed, skip that step.
 
 ```sh
+git clone https://github.com/jdmyco/groove-lab-ai.git
+cd groove-lab-ai
 mise install
 go run .
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). Pick a groove from the library to open the drum sheet, or choose Preview to hear its loop. Written onsets stay on the staff grid while playback uses the score's timing offsets. The score header gives the meter, grouping, tempo, and bar count. Description, feel, and timing appear below the sheet and in the score JSON's `metadata` object.
+Open the [groove gallery](http://127.0.0.1:8080). You can browse, play, and generate grooves with the procedural engine as soon as Go is running. The [model comparison](http://127.0.0.1:8080/compare) uses two local MLX servers.
+
+Try one of these prompts in the gallery or comparison page.
+
+- Write a Purdie shuffle at 84 BPM with exactly six ghost notes.
+- Write a soft bossa nova with syncopated cross-stick.
+- Make me a funky groove.
 
 ## Generate and compare
 
@@ -43,7 +53,7 @@ Pass `--adapter-path PATH` to the model server once the adapter is available. Th
 
 The library and player reuse FormKit's dark and light palettes, Inter type, Bravura-based music glyphs, SVG drum-score renderer, sample-clock worklet, and Virtuosity Drums kit. GrooveScoreV1 written groups set the staff beaming in compound and mixed eighth-note meters. The audio clock uses each hit's sounding onset after its timing offset. A middle tom has its own staff position and uses the kit's low-tom sample.
 
-The checked-in assets are bundled from [the pinned FormKit revision](assets/formkit/SOURCE.txt) and served by Go. To refresh them from a FormKit checkout with its locked dependencies installed, run `node formkit/sync.mjs ~/workspace/formkit`. The Go server runs independently of that checkout. [Acoustic kit credits](assets/formkit/audio/CREDITS.md) · [Music font license](assets/formkit/BopkitMusic-LICENSE.txt)
+Go serves assets bundled from the pinned FormKit revision. To refresh them from a FormKit checkout with its locked dependencies installed, run `node formkit/sync.mjs /path/to/formkit`. Bundled assets carry their own credits and notices. [FormKit revision](assets/formkit/SOURCE.txt) · [Acoustic kit credits](assets/formkit/audio/CREDITS.md) · [Font and library notices](assets/formkit)
 
 ## Fine-tuning corpus
 
@@ -83,7 +93,9 @@ uv run --no-project --python 3.13 --with 'mlx-lm[train]' mlx_lm.lora \
   --adapter-path .groove-training/adapters-v2
 ```
 
-MLX writes `adapters.safetensors` and `adapter_config.json` to `.groove-training/adapters-v2/`. To keep a previous run, give the new run a different `--adapter-path` and use that path when serving.
+MLX writes `adapters.safetensors` and `adapter_config.json` to `.groove-training/adapters-v2/`. Use a fresh `--adapter-path` for each run you want to keep. To serve an exported adapter, put those two files in one directory and pass that directory as `--adapter-path`. Load it with the same base checkpoint used for training.
+
+Generated training splits, adapter weights, and checkpoints live under the ignored `.groove-training/` directory. The checked-in catalog and scripts can regenerate the dataset.
 
 ### Compare base and adapted Qwen
 
