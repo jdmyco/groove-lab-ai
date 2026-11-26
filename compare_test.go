@@ -44,11 +44,11 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 			}}})
 		}))
 	}
-	base := stub("base-test", &baseCalls, validScore)
-	defer base.Close()
 	withoutKick := strings.Replace(validScore, `,{"tick":0,"instrument":"kick","velocity":110}`, "", 1)
 	louder := strings.Replace(validScore, `"velocity":110`, `"velocity":118`, 1)
 	wrongShape := strings.Replace(validScore, `"bars":1`, `"description":"wrong location","bars":1`, 1)
+	base := stub("base-test", &baseCalls, wrongShape, withoutKick, "malformed", "malformed", validScore)
+	defer base.Close()
 	adapted := stub("adapted-test", &adaptedCalls, wrongShape, withoutKick, louder)
 	defer adapted.Close()
 
@@ -67,7 +67,7 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 		path, attempts string
 		velocity       int
 	}{
-		{"/api/compare/base", "1", 110},
+		{"/api/compare/base", "5", 110},
 		{"/api/compare/adapted", "3", 118},
 	} {
 		w := httptest.NewRecorder()
@@ -80,14 +80,14 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 			t.Errorf("%s returned HTTP %d with %s attempts: %s", tc.path, w.Code, w.Header().Get("X-Groove-Attempts"), w.Body)
 		}
 	}
-	if baseCalls.Load() != 1 || adaptedCalls.Load() != 3 {
+	if baseCalls.Load() != 5 || adaptedCalls.Load() != 3 {
 		t.Errorf("unexpected calls: base=%d adapted=%d", baseCalls.Load(), adaptedCalls.Load())
 	}
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/compare/base", strings.NewReader(`{"prompt":"funk","engine":"procedural"}`))
 	r.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(w, r)
-	if w.Code != http.StatusBadRequest || baseCalls.Load() != 1 {
+	if w.Code != http.StatusBadRequest || baseCalls.Load() != 5 {
 		t.Errorf("comparison endpoint accepted a procedural override: HTTP %d", w.Code)
 	}
 }

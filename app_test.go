@@ -97,8 +97,8 @@ func TestGenerateBoundsRetries(t *testing.T) {
 		t.Fatalf("invalid prompt: got HTTP %d after %d calls", response.Code, calls.Load())
 	}
 	response = generateRequest(handler, `{"prompt":"A shuffle"}`)
-	if response.Code != 502 || calls.Load() != 3 {
-		t.Fatalf("invalid scores: got HTTP %d after %d calls", response.Code, calls.Load())
+	if response.Code != 502 || calls.Load() != 5 || response.Header().Get("X-Groove-Attempts") != "5" {
+		t.Fatalf("invalid scores: got HTTP %d after %d calls, header %s", response.Code, calls.Load(), response.Header().Get("X-Groove-Attempts"))
 	}
 	upstream.Close()
 	response = generateRequest(handler, `{"prompt":"A shuffle"}`)

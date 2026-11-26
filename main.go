@@ -34,7 +34,12 @@ var instruction string
 
 var systemPrompt = strings.TrimSpace(instruction)
 
-const maxAttempts = 3
+const (
+	maxAttempts         = 5
+	modelAttemptTimeout = 90 * time.Second
+	modelRequestTimeout = maxAttempts * modelAttemptTimeout
+	requestReadTimeout  = 10 * time.Second
+)
 
 type modelClient struct {
 	url    string
@@ -52,7 +57,7 @@ func main() {
 		log.Fatal(err)
 	}
 	port := env("PORT", "8080")
-	client := &http.Client{Timeout: 90 * time.Second}
+	client := &http.Client{Timeout: modelAttemptTimeout}
 	model := modelClient{
 		url:    env("LLM_URL", "http://127.0.0.1:8765/v1/chat/completions"),
 		name:   env("LLM_MODEL", "default_model"),
@@ -75,8 +80,8 @@ func main() {
 		Addr:              "127.0.0.1:" + port,
 		Handler:           loopbackOnly(handler),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      185 * time.Second,
+		ReadTimeout:       requestReadTimeout,
+		WriteTimeout:      requestReadTimeout + modelRequestTimeout + 5*time.Second,
 	}
 	log.Printf("Groove Lab at http://%s", server.Addr)
 	log.Fatal(server.ListenAndServe())
@@ -186,7 +191,7 @@ func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, instr
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), modelRequestTimeout)
 	defer cancel()
 	userMessage := prompt
 	var validationErr error

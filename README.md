@@ -37,7 +37,7 @@ mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8765 \
   --chat-template-args '{"enable_thinking":false}'
 ```
 
-Pass `--adapter-path PATH` to the model server once the adapter is available. The Go app expects JSON score text in `choices[0].message.content` and feeds validation errors back to the model for up to three attempts in total.
+Pass `--adapter-path PATH` to the model server once the adapter is available. The Go app expects JSON score text in `choices[0].message.content` and feeds validation errors back to the model for up to five attempts in total.
 
 ## FormKit score and sound
 
@@ -104,7 +104,7 @@ uv run --no-project --python 3.13 --with mlx-lm mlx_lm.server \
   --chat-template-args '{"enable_thinking":false}'
 ```
 
-The comparison page sends the same prompt and JSON-format example to both models and displays their scores and attempt counts independently. Go validates each score and checks requested hit counts. For an invalid score, it sends validation feedback back to that model for up to three attempts total. The gallery's **Local LLM** selector uses its own endpoint on port 8765 by default. Keep the model ID at `default_model` for these MLX servers so MLX selects the adapter loaded on port 8767. For other servers, set `LLM_BASE_URL` or `LLM_ADAPTER_URL` to change a comparison endpoint and `LLM_BASE_MODEL` or `LLM_ADAPTER_MODEL` if it requires a different model ID.
+The comparison page sends the same prompt and JSON-format example to both models and displays their scores and attempt counts independently. Go validates each score and checks requested hit counts. For an invalid score, it sends validation feedback back to that model for up to five attempts total. The gallery's **Local LLM** selector uses its own endpoint on port 8765 by default. Keep the model ID at `default_model` for these MLX servers so MLX selects the adapter loaded on port 8767. For other servers, set `LLM_BASE_URL` or `LLM_ADAPTER_URL` to change a comparison endpoint and `LLM_BASE_MODEL` or `LLM_ADAPTER_MODEL` if it requires a different model ID.
 
 Use `.groove-training/data/test.jsonl` to evaluate the adapter on families held out from training. The procedural engine has the full catalog, including those families. For a fair head-to-head comparison, write a shared set of new prompts outside the catalog and measure exact-count accuracy, score validity, and how well each loop sounds. `--mask-prompt` trains on the score completion. See the [MLX LM fine-tuning guide](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md).
 
