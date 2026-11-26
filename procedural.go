@@ -103,10 +103,10 @@ var (
 	groupPattern = regexp.MustCompile(`\b[0-9]+(?:\s*\+\s*[0-9]+)+\b`)
 	styleTerms   = [][]string{
 		{"rock", "rock", "garage rock", "prog rock", "progressive rock"},
-		{"funk", "funk", "funky", "second line", "new orleans funk", "disco funk"},
-		{"blues", "blues", "bluesy", "chicago shuffle"},
+		{"funk", "funk", "funky", "paradiddle", "second line", "new orleans funk", "disco funk"},
+		{"blues", "blues", "bluesy", "purdie shuffle", "chicago shuffle"},
 		{"jazz", "jazz", "jazzy", "bebop", "jazz waltz"},
-		{"latin", "latin", "bossa", "bossa nova", "samba", "samba jazz", "mambo", "songo", "afro cuban"},
+		{"latin", "latin", "bossa", "bossa nova", "samba", "samba jazz", "mambo", "songo", "afro cuban", "mozambique", "cascara", "baiao", "choro", "soca", "boogaloo"},
 		{"soul", "soul", "neo soul", "r b", "r and b"},
 		{"disco", "disco"},
 		{"reggae", "reggae", "one drop", "rockers"},
@@ -118,7 +118,7 @@ var (
 		{"open_hat", "open hi hats", "open hi hat", "open hats", "open hat"},
 		{"closed_hat", "closed hi hats", "closed hi hat", "closed hats", "closed hat"},
 		{"foot_hat", "foot hi hats", "foot hi hat", "pedal hi hats", "pedal hi hat", "foot hats", "foot hat"},
-		{"hat", "hi hats", "hi hat", "hats", "hat"},
+		{"hat", "hi hats", "hi hat", "hihats", "hihat", "hats", "hat"},
 		{"ride", "ride cymbals", "ride cymbal", "rides", "ride"}, {"rim", "rim clicks", "rim click", "cross sticks", "cross stick", "side sticks", "side stick", "rim"},
 		{"kick", "bass drums", "bass drum", "bass hits", "bass hit", "kicks", "kick"}, {"snare", "snares", "snare"},
 		{"tom_low", "floor toms", "floor tom", "low toms", "low tom"},
@@ -126,7 +126,7 @@ var (
 		{"tom", "toms", "tom"}, {"cowbell", "cowbells", "cowbell"},
 		{"clave", "claves", "clave"}, {"shaker", "shakers", "shaker"}, {"crash", "crash cymbals", "crash cymbal", "crashes", "crash"},
 	}
-	accents = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ñ", "n")
+	accents = strings.NewReplacer("á", "a", "ã", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ñ", "n")
 )
 
 func normalized(text string) string {
@@ -141,7 +141,7 @@ func phraseIn(text, phrase string) bool {
 
 func parseBrief(prompt string) (grooveBrief, error) {
 	lower := strings.ReplaceAll(strings.ToLower(prompt), "−", "-")
-	brief := grooveBrief{text: normalized(lower)}
+	brief := grooveBrief{text: strings.ReplaceAll(normalized(lower), " mamba ", " mambo ")}
 	if match := meterPattern.FindStringSubmatch(lower); match != nil {
 		brief.meter = match[1] + "/" + match[2]
 		if _, ok := meters[brief.meter]; !ok {
@@ -291,7 +291,7 @@ func ranking(brief grooveBrief, candidate catalogGroove) (int, bool) {
 	if strings.Contains(brief.text, candidate.family) {
 		rank += 18
 	}
-	for _, term := range []string{"swing", "swung", "shuffle", "half time", "laid back", "late pocket", "straight", "sparse", "second line", "displaced", "triplet", "sixteenth", "eighth", "diddles", "offbeat", "ostinato"} {
+	for _, term := range []string{"swing", "swung", "shuffle", "half time", "laid back", "late pocket", "straight", "sparse", "second line", "displaced", "triplet", "sixteenth", "eighth", "diddles", "offbeat", "ostinato", "paradiddle", "mambo", "mozambique", "cascara", "baiao", "choro", "soca", "boogaloo"} {
 		if phraseIn(brief.text, term) && phraseIn(candidate.search, term) {
 			rank += 6
 		}

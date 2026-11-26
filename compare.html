@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/formkit/theme.css">
+  <title>Compare Qwen scores · Groove Lab</title>
+  <style>
+    [hidden] { display: none !important; }
+    h1, h2, p, dl, dd { margin: 0; }
+    a { color: var(--gl-accent); text-underline-offset: 4px; }
+    :is(a, textarea, summary):focus-visible { outline: 3px solid var(--gl-accent); outline-offset: 4px; }
+    .app-header { max-width: 1440px; margin: auto; justify-content: space-between; }
+    .brand-kit { color: var(--gl-text); }
+    main { display: grid; gap: 18px; padding: 0 24px 48px; }
+    h1 { font-size: 26px; font-weight: 600; letter-spacing: -.6px; }
+    h2 { font-size: 20px; }
+    form, .model { background: var(--gl-surface); border: 1px solid var(--gl-outline); border-radius: 16px; padding: 16px; }
+    form { display: grid; gap: 10px; }
+    form label { font-size: 14px; font-weight: 500; }
+    textarea {
+      width: 100%; min-height: 76px; padding: 10px 12px; resize: vertical;
+      font: inherit; line-height: 1.5; color: inherit; background: var(--gl-bg);
+      border: 1px solid var(--gl-outline); border-radius: 10px;
+    }
+    form button { justify-self: start; }
+    .models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+    .model { min-width: 0; }
+    .notice, .score-summary { color: var(--gl-sub); font-size: 13px; line-height: 1.5; margin-top: 5px; overflow-wrap: anywhere; }
+    .notice:empty { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    #submitted-prompt { margin: 0; }
+    #submitted-prompt strong { margin-inline-end: 8px; font-weight: 600; }
+    .notice.error { color: var(--gl-danger-text); }
+    .transport { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .transport button, form button { min-height: 44px; padding-inline: 16px; }
+    .sheet {
+      margin-block: 12px; padding-block: 6px; min-width: 0; overflow: hidden;
+      border: 1px solid var(--gl-outline); border-radius: 12px; background: var(--gl-bg);
+    }
+    .sheet .gs-scroll { min-width: 0; }
+    dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 12px; margin-block: 12px; font-size: 13px; line-height: 1.5; }
+    dt { font-weight: 600; }
+    dd { color: var(--gl-sub); overflow-wrap: anywhere; }
+    details { border-top: 1px solid var(--gl-outline); padding-top: 10px; font-size: 13px; }
+    summary { color: var(--gl-sub); cursor: pointer; }
+    pre { max-height: 240px; overflow: auto; padding: 12px; background: var(--gl-bg); border-radius: 10px; }
+    @media (max-width: 720px) {
+      .app-header { padding-inline: 12px; }
+      main { padding-inline: 12px; }
+      .models { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-bop">Groove</span> <span class="brand-kit">Lab</span></div>
+    <a href="/">Groove gallery</a>
+  </header>
+  <main class="gl">
+    <form id="compare">
+      <h1>Compare Qwen scores</h1>
+      <label for="prompt">Describe a groove</label>
+      <textarea id="prompt" maxlength="1000" required>Write a simple one-bar 4/4 rock groove at 100 BPM with a steady hi-hat and a clear backbeat.</textarea>
+      <button class="gl-primary" type="submit">Generate both scores</button>
+    </form>
+    <p id="submitted-prompt" class="notice" hidden><strong>Submitted prompt</strong><span></span></p>
+    <div class="models" id="models"></div>
+  </main>
+  <template id="model-card">
+    <section class="model">
+      <h2></h2>
+      <p class="notice generation-status" role="status" aria-atomic="true">
+        <span class="sr-only"></span><span class="status-text">Ready</span>
+      </p>
+      <div class="result" hidden>
+        <p class="score-summary"></p>
+        <div class="transport">
+          <button class="gl-primary play" type="button">Play loop</button>
+          <button class="gl-secondary stop" type="button" disabled>Stop</button>
+        </div>
+        <p class="notice error audio-status" role="status"></p>
+        <div class="sheet"></div>
+        <dl>
+          <dt>Description</dt><dd class="description"></dd>
+          <dt>Feel</dt><dd class="feel"></dd>
+          <dt>Timing</dt><dd class="timing"></dd>
+        </dl>
+        <details>
+          <summary>Score JSON</summary>
+          <pre></pre>
+        </details>
+      </div>
+    </section>
+  </template>
+  <script type="module">
+    import { createPreview } from "/assets/formkit/formkit.js";
+
+    const form = document.querySelector("#compare");
+    const field = document.querySelector("#prompt");
+    const submit = form.querySelector("button");
+    const submitted = document.querySelector("#submitted-prompt");
+    const models = document.querySelector("#models");
+    const template = document.querySelector("#model-card");
+    const cards = [
+      ["base", "Base Qwen3-4B"],
+      ["adapted", "Qwen3-4B + QLoRA"],
+    ].map(([model, title]) => {
+      const card = template.content.firstElementChild.cloneNode(true);
+      const heading = card.querySelector("h2");
+      heading.id = model + "-title";
+      heading.textContent = title;
+      card.querySelector(".generation-status .sr-only").textContent = title + ". ";
+      card.setAttribute("aria-labelledby", heading.id);
+      models.append(card);
+
+      const play = card.querySelector(".play");
+      const stop = card.querySelector(".stop");
+      let state;
+      const preview = createPreview(card.querySelector(".sheet"), view => {
+        state = view.state;
+        play.disabled = view.starting;
+        stop.disabled = !view.starting && state !== "playing" && state !== "paused";
+        play.textContent = view.starting ? "Loading sounds…" : state === "playing" ? "Pause" :
+          state === "paused" ? "Resume" : "Play loop";
+        card.querySelector(".audio-status").textContent = view.error;
+      });
+      play.addEventListener("click", () => {
+        if (state === "playing") {
+          preview.pause();
+          return;
+        }
+        for (const other of cards) {
+          if (other.preview !== preview) other.preview.stop();
+        }
+        void preview.play();
+      });
+      stop.addEventListener("click", () => preview.stop());
+      return { model, title, card, preview };
+    });
+
+    function withAttempts(message, attempts, duration) {
+      const count = attempts > 0 ? attempts + (attempts === 1 ? " attempt" : " attempts") : "";
+      return [message, count, duration].filter(Boolean).join(" · ");
+    }
+
+    async function generate({ model, title, card, preview }, prompt) {
+      const status = card.querySelector(".generation-status");
+      const statusText = status.querySelector(".status-text");
+      const result = card.querySelector(".result");
+      if (!result.hidden) preview.stop();
+      result.hidden = true;
+      statusText.textContent = "Generating…";
+      status.classList.remove("error");
+
+      const started = performance.now();
+      let attempts = 0;
+      try {
+        const response = await fetch("/api/compare/" + model, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        attempts = Number(response.headers.get("X-Groove-Attempts"));
+        const score = await response.json();
+        if (!response.ok) throw new Error(score.error || "The model request failed.");
+
+        const beat = score.tempo.beat_unit === "dotted_quarter" ? " dotted-quarter" : "";
+        const grouping = score.grouping ? " (" + score.grouping.join("+") + ")" : "";
+        const bars = score.bars === 1 ? "1 bar" : score.bars + " bars";
+        card.querySelector(".score-summary").textContent =
+          score.meter + grouping + " · " + score.tempo.bpm + beat + " BPM · " + bars;
+        for (const name of ["description", "feel", "timing"]) {
+          card.querySelector("." + name).textContent = score.metadata[name];
+        }
+        card.querySelector("details").open = false;
+        card.querySelector("pre").textContent = JSON.stringify(score, null, 2);
+        result.hidden = false;
+        preview.setScore(score, title);
+
+        const duration = ((performance.now() - started) / 1000).toFixed(1) + " s";
+        const repair = response.headers.get("X-Groove-Repair");
+        statusText.textContent = withAttempts(repair ? "Repaired score (" + repair + ")" : "Valid score", attempts, duration);
+      } catch (error) {
+        result.hidden = true;
+        statusText.textContent = withAttempts(error.message, attempts);
+        status.classList.add("error");
+      }
+    }
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const prompt = field.value.trim();
+      if (!prompt || submit.disabled) return;
+      submitted.querySelector("span").textContent = prompt;
+      submitted.hidden = false;
+      submit.disabled = true;
+      try {
+        await Promise.all(cards.map(card => generate(card, prompt)));
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    window.addEventListener("pagehide", () => {
+      for (const { preview } of cards) preview.stop();
+    });
+  </script>
+</body>
+</html>

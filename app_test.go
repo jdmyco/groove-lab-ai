@@ -61,7 +61,7 @@ func TestGenerateRetriesMalformedScores(t *testing.T) {
 		case 1:
 			content = "oops"
 		case 2:
-			content = strings.Replace(validScore, `"tick":144`, `"tick":288`, 1)
+			content = strings.Replace(validScore, `"bpm":62`, `"bpm":12`, 1)
 		}
 		if call > 1 && !strings.Contains(request.Messages[1].Content, "Previous attempt") {
 			t.Error("retry missing validation feedback")
@@ -97,8 +97,8 @@ func TestGenerateBoundsRetries(t *testing.T) {
 		t.Fatalf("invalid prompt: got HTTP %d after %d calls", response.Code, calls.Load())
 	}
 	response = generateRequest(handler, `{"prompt":"A shuffle"}`)
-	if response.Code != 502 || calls.Load() != 3 {
-		t.Fatalf("invalid scores: got HTTP %d after %d calls", response.Code, calls.Load())
+	if response.Code != 502 || calls.Load() != 5 || response.Header().Get("X-Groove-Attempts") != "5" {
+		t.Fatalf("invalid scores: got HTTP %d after %d calls, header %s", response.Code, calls.Load(), response.Header().Get("X-Groove-Attempts"))
 	}
 	upstream.Close()
 	response = generateRequest(handler, `{"prompt":"A shuffle"}`)
@@ -123,8 +123,8 @@ func TestTrainingCorpus(t *testing.T) {
 		t.Fatal("gallery corpus route did not return JSONL")
 	}
 	rows := strings.Split(strings.TrimSpace(response.Body.String()), "\n")
-	if len(rows) != 1240 {
-		t.Fatalf("found %d rows, want 1240", len(rows))
+	if len(rows) != 1330 {
+		t.Fatalf("found %d rows, want 1330", len(rows))
 	}
 
 	prompts := make(map[string]bool)
@@ -252,8 +252,8 @@ func TestTrainingCorpus(t *testing.T) {
 	if countedRows != 240 {
 		t.Errorf("found %d count-focused presets, want 240", countedRows)
 	}
-	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 65 {
-		t.Error("corpus should cover ten styles, seven meters, four bar counts and 65 groove families")
+	if len(styleCounts) != len(styles) || len(meterCounts) != len(meters) || len(lengths) != 4 || len(families) != 74 {
+		t.Error("corpus should cover ten styles, seven meters, four bar counts and 74 groove families")
 	}
 }
 
@@ -828,6 +828,19 @@ func TestCountedHitsFreeCapacityBeforeAdding(t *testing.T) {
 		}
 		if countHits(score.Events, "ghost", 0, 4*672) != 15 || countHits(score.Events, "kick", 0, 4*672) != 0 {
 			t.Fatalf("did not honor %q", prompt)
+		}
+	}
+}
+
+func TestProceduralMatchesBaiao(t *testing.T) {
+	handler := newHandler(modelClient{})
+	for _, name := range []string{"baiao", "baião"} {
+		body, _ := json.Marshal(map[string]string{"engine": "procedural", "prompt": "Make a Brazilian " + name + " drum groove"})
+		response := generateRequest(handler, string(body))
+		score, err := parseScore(response.Body.Bytes())
+		if response.Code != http.StatusOK || err != nil || score.Style != "latin" ||
+			score.Metadata == nil || !strings.Contains(score.Metadata.Description, "baião") {
+			t.Errorf("wrong groove for %s: %s", name, response.Body)
 		}
 	}
 }

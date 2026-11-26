@@ -5,6 +5,7 @@ from pathlib import Path
 
 from counted import add_counted_examples, count_line, counted_events
 from expansion import add_families
+from repertoire import add_repertoire
 
 ROOT = Path(__file__).resolve().parent
 SYSTEM = (ROOT / "system-prompt.txt").read_text().strip()
@@ -459,8 +460,9 @@ family("long-short-short fusion", "fusion", "7/8", 114, "three plus two plus two
 add_families(family)
 
 add_counted_examples(counted_family)
+add_repertoire(family)
 
-assert len(rows) == 1240
+assert len(rows) == 1330
 assert len({row["messages"][1]["content"] for row in rows}) == len(rows)
 (ROOT / "train.jsonl").write_text("".join(
     json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n" for row in rows

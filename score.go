@@ -43,19 +43,32 @@ type Score struct {
 func parseScore(raw []byte) (Score, error) {
 	var score Score
 	if err := json.Unmarshal(raw, &score, json.RejectUnknownMembers(true)); err != nil {
-		return Score{}, errors.New("score must be one JSON object with the required fields")
+		detail := err.Error()
+		const maxDetail = 240
+		if len(detail) > maxDetail {
+			end := maxDetail
+			for !utf8.RuneStart(detail[end]) {
+				end--
+			}
+			detail = detail[:end] + "…"
+		}
+		return Score{}, fmt.Errorf("score must be one JSON object with the required fields: %s", detail)
 	}
 	if err := validateScore(score); err != nil {
 		return Score{}, err
 	}
-	sort.Slice(score.Events, func(i, j int) bool {
-		a, b := score.Events[i], score.Events[j]
+	sortScoreEvents(score.Events)
+	return score, nil
+}
+
+func sortScoreEvents(events []Event) {
+	sort.Slice(events, func(i, j int) bool {
+		a, b := events[i], events[j]
 		if *a.Tick == *b.Tick {
 			return a.Instrument < b.Instrument
 		}
 		return *a.Tick < *b.Tick
 	})
-	return score, nil
 }
 
 var styles = []string{"rock", "funk", "blues", "jazz", "latin", "soul", "disco", "reggae", "hip_hop", "fusion"}
@@ -143,14 +156,14 @@ func validateScore(score Score) error {
 		}
 		tick := *event.Tick
 		if tick < 0 || tick >= total {
-			return fmt.Errorf("event tick %d outside score; valid ticks are 0 through %d", tick, total-1)
+			return fmt.Errorf("event tick %d outside score. Valid ticks are 0 through %d. Playback already loops back to tick 0. Keep all requested hits inside this range", tick, total-1)
 		}
 		actual := tick + event.Offset
 		if event.Offset < -6 || event.Offset > 6 || actual < 0 || actual >= total {
 			return fmt.Errorf("offset at tick %d must be within ±6 and keep the hit inside the loop", tick)
 		}
 		if !allowedInstruments[event.Instrument] {
-			return fmt.Errorf("event at tick %d uses an unknown instrument", tick)
+			return fmt.Errorf("event at tick %d uses an unknown instrument. Choose a listed instrument. Use closed_hat or open_hat for stick hi-hat hits", tick)
 		}
 		if event.Velocity < 1 || event.Velocity > 127 {
 			return fmt.Errorf("invalid velocity %d", event.Velocity)

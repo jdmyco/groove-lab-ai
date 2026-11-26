@@ -1,15 +1,25 @@
 # Groove Lab
 
-Groove Lab is a local drum-groove gallery and comparison app. One Go server serves the gallery, the 1,240-example fine-tuning corpus, and procedural and local-model generation.
+Generate, inspect, and play drum grooves in your browser. Groove Lab includes a 1,330-groove catalog, a procedural generator, and a comparison page for base Qwen and a fine-tuned MLX adapter.
 
-## Run the gallery
+## Quick start
+
+Use Go 1.27.3 or later. The commands below use `mise` to install the pinned Go version. If you already have Go installed, skip that step.
 
 ```sh
+git clone https://github.com/jdmyco/groove-lab-ai.git
+cd groove-lab-ai
 mise install
 go run .
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). Pick a groove from the library to open the drum sheet, or choose Preview to hear its loop. Written onsets stay on the staff grid while playback uses the score's timing offsets. The score header gives the meter, grouping, tempo, and bar count. Description, feel, and timing appear below the sheet and in the score JSON's `metadata` object.
+Open the [groove gallery](http://127.0.0.1:8080). You can browse, play, and generate grooves with the procedural engine as soon as Go is running. The [model comparison](http://127.0.0.1:8080/compare) uses two local MLX servers.
+
+Try one of these prompts in the gallery or comparison page.
+
+- Write a Purdie shuffle at 84 BPM with exactly six ghost notes.
+- Write a soft bossa nova with syncopated cross-stick.
+- Make me a funky groove.
 
 ## Generate and compare
 
@@ -37,17 +47,17 @@ mlx_lm.server --model mlx-community/Qwen3-4B-4bit --port 8765 \
   --chat-template-args '{"enable_thinking":false}'
 ```
 
-Pass `--adapter-path PATH` to the model server once the adapter is available. The Go app expects JSON score text in `choices[0].message.content` and feeds validation errors back to the model for up to three attempts in total.
+Pass `--adapter-path PATH` to the model server once the adapter is available. The Go app expects JSON score text in `choices[0].message.content` and feeds validation errors back to the model for up to five attempts in total.
 
 ## FormKit score and sound
 
 The library and player reuse FormKit's dark and light palettes, Inter type, Bravura-based music glyphs, SVG drum-score renderer, sample-clock worklet, and Virtuosity Drums kit. GrooveScoreV1 written groups set the staff beaming in compound and mixed eighth-note meters. The audio clock uses each hit's sounding onset after its timing offset. A middle tom has its own staff position and uses the kit's low-tom sample.
 
-The checked-in assets are bundled from [the pinned FormKit revision](assets/formkit/SOURCE.txt) and served by Go. To refresh them from a FormKit checkout with its locked dependencies installed, run `node formkit/sync.mjs ~/workspace/formkit`. The Go server runs independently of that checkout. [Acoustic kit credits](assets/formkit/audio/CREDITS.md) · [Music font license](assets/formkit/BopkitMusic-LICENSE.txt)
+Go serves assets bundled from the pinned FormKit revision. To refresh them from a FormKit checkout with its locked dependencies installed, run `node formkit/sync.mjs /path/to/formkit`. Bundled assets carry their own credits and notices. [FormKit revision](assets/formkit/SOURCE.txt) · [Acoustic kit credits](assets/formkit/audio/CREDITS.md) · [Font and library notices](assets/formkit)
 
 ## Fine-tuning corpus
 
-[training/train.jsonl](training/train.jsonl) contains 1,240 original loop arrangements in 65 families across rock, funk, blues, jazz, Latin, soul, disco, reggae, hip-hop, and fusion. It covers 3/4, 4/4, 5/4, 6/8, 7/8, 7/4, and 12/8. Every example has a practice-length phrase and a stable timekeeping part. Toms occur as part of recurring rhythmic figures. The 5/4 and 7/8 families each have two accent groupings. Search the gallery for **exact counts** to see the 240 count-focused presets. They cover whole-loop and per-bar counts, zero hits, and combinations of multiple drum voices.
+[training/train.jsonl](training/train.jsonl) contains 1,330 original loop arrangements in 74 families across rock, funk, blues, jazz, Latin, soul, disco, reggae, hip-hop, and fusion. It covers 3/4, 4/4, 5/4, 6/8, 7/8, 7/4, and 12/8. Every example has a practice-length phrase and a stable timekeeping part. Toms occur as part of recurring rhythmic figures. The 5/4 and 7/8 families each have two accent groupings. Search the gallery for **exact counts** to see the 240 count-focused presets. They cover whole-loop and per-bar counts, zero hits, and combinations of multiple drum voices.
 
 FormKit's `src/music/groove-schema.ts`, `groove-playability.ts`, and genre, Latin, and blues studies informed the written/playback timing split, the kit voices, and the drum-set checks. The score uses a 96-tick quarter-note grid. Optional `grouping` counts are measured in the meter's denominator units, and `offset` moves the audible onset by up to six ticks. Older v1 scores with overlapping hand cymbals may need their hat part revoiced as foot hats for the current playability checks.
 
@@ -59,37 +69,58 @@ Artist tags describe stylistic references for newly arranged drum parts. The cor
 - The expanded Latin set uses a seven-stroke bembé bell cycle and a seven-in-sixteen partido alto rim timeline. [Traditional timeline analysis](https://ehess.modelisationsavoirs.fr/atiam/biblio/Toussaint-BRIDGES2005.pdf)
 - Gavin Harrison's accent groupings and Carlton Barrett's one-drop practice. [Harrison's groupings lesson](https://www.drumeo.com/beat/?p=7967) · [Carlton Barrett profile](https://thereggaemuseum.com/musician/carlton-barrett/)
 
+The new repertoire includes a two-bar Purdie-style shuffle, slow single paradiddles with half-note accents, and continuous sixteenth-note hi-hat funk at 80 BPM. The Latin and Caribbean arrangements include Mozambique, cáscara, baião, choro, soca, and boogaloo. The sources informed the groove characteristics and kit orchestration. [Bernard Purdie’s shuffle lesson](https://www.drumeo.com/beat/bernard-purdie-drum-lessons/) · [Yamaha’s paradiddle lesson](https://hub.yamaha.com/drums/d-how-to/practice-exercises-for-the-beginning-drummer/) · [Juan Carlito Mendoza’s Latin kit lesson](https://www.drumeo.com/beat/5-latin-grooves-every-drummer-should-know/) · [Edú Ribeiro’s Brazilian drumming course](https://www.openstudiojazz.com/courses/brazilian-jazz-drumming/) · [Adam Kuns’s soca lesson](https://www.youtube.com/watch?v=pTdjGyqiJFc) · [Joe Bataan’s Latin soul interview](https://www.redbullmusicacademy.com/lectures/joe-bataan-extraordinary-joe/)
+
 The JSONL uses [MLX LM chat records](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md#data). Each row contains a shared system message, a natural-language request, and the compact score JSON as the assistant message. The score's `metadata` describes the beat, feel, and timing. The JSONL row's separate `groove` object identifies the catalog family, sound, influences, and cycle length used by the matcher. The folder layout is small.
 
 - `index.html` is the playable gallery and generator.
 - `main.go` runs the Go API and calls the local model. `procedural.go`, `edits.go`, and `counts.go` implement catalog matching, beat edits, and exact counts.
 - `score.go` and `score.schema.json` define and validate the shared score.
-- `training/build.py` rebuilds the presets from authored parts, with more families in `training/expansion.py` and the count exercises in `training/counted.py`. `training/prepare.py` exports the training and evaluation splits.
+- `training/build.py` rebuilds the presets from authored parts in `training/expansion.py`, `training/repertoire.py`, and `training/counted.py`. `training/prepare.py` exports the splits and uses `training/paraphrases.py` to add varied requests for the same training scores.
 - `assets/formkit/` contains the notation, styling, and sounds that the gallery serves. `formkit/` contains the adapter and asset sync script.
 
 ### Train an adapter with MLX LM
 
-On Apple Silicon, run these from the repository root with `uv` installed. The first command creates three splits and holds each groove family together. The second starts a 300-step QLoRA experiment on the quantized Qwen checkpoint. The model download and training happen locally.
+On Apple Silicon, run these from the repository root with `uv` installed. The first command creates 10,950 training, 190 validation, and 190 test examples. It assigns groove families to splits before adding 10,000 prompt variations to the training split. The second starts a 1,000-step QLoRA run on quantized Qwen. With batch size one, a full pass through the expanded training set is 10,950 steps.
 
 ```sh
-python3 training/prepare.py .groove-training/data
+# Skip this line if you already prepared the splits.
+python3 -B training/prepare.py .groove-training/data-v2
 uv run --no-project --python 3.13 --with 'mlx-lm[train]' mlx_lm.lora \
   --model mlx-community/Qwen3-4B-4bit --train \
-  --data .groove-training/data --mask-prompt --iters 300 \
+  --data .groove-training/data-v2 --mask-prompt --iters 1000 \
   --batch-size 1 --max-seq-length 4096 --grad-checkpoint \
-  --adapter-path .groove-training/adapters
+  --adapter-path .groove-training/adapters-v2
 ```
 
-After training, start the local model with the same base checkpoint and load the adapter. Leave this running alongside `go run .`, then select **Local LLM** in the gallery.
+MLX writes `adapters.safetensors` and `adapter_config.json` to `.groove-training/adapters-v2/`. Use a fresh `--adapter-path` for each run you want to keep. To serve an exported adapter, put those two files in one directory and pass that directory as `--adapter-path`. Load it with the same base checkpoint used for training.
+
+Generated training splits, adapter weights, and checkpoints live under the ignored `.groove-training/` directory. The checked-in catalog and scripts can regenerate the dataset.
+
+### Compare base and adapted Qwen
+
+Run these in separate terminals from the repository root. Start Go with `go run .` in a third terminal, then open the [comparison page](http://127.0.0.1:8080/compare).
+
+**Terminal 1 — base Qwen on port 8766**
 
 ```sh
 uv run --no-project --python 3.13 --with mlx-lm mlx_lm.server \
-  --model mlx-community/Qwen3-4B-4bit --port 8765 \
-  --adapter-path .groove-training/adapters \
+  --model mlx-community/Qwen3-4B-4bit --host 127.0.0.1 --port 8766 \
   --chat-template-args '{"enable_thinking":false}'
 ```
 
-Use `.groove-training/data/test.jsonl` to evaluate the adapter on families held out from training. The procedural engine has the full catalog, including those families. For a fair head-to-head comparison, write a shared set of new prompts outside the catalog and measure exact-count accuracy, score validity, and how well each loop sounds. `--mask-prompt` trains on the score completion. See the [MLX LM fine-tuning guide](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md).
+**Terminal 2 — Qwen with the adapter on port 8767**
+
+```sh
+uv run --no-project --python 3.13 --with mlx-lm mlx_lm.server \
+  --model mlx-community/Qwen3-4B-4bit --host 127.0.0.1 --port 8767 \
+  --adapter-path .groove-training/adapters-v2 \
+  --chat-template-args '{"enable_thinking":false}'
+```
+
+The comparison page sends the same prompt and JSON-format example to both models and displays their scores and attempt counts independently. For generated scores, Go rounds fractional ticks, clips positions one tick over an edge, removes repeated downbeats at the loop boundary, maps familiar instrument labels such as `hi_hat`, and drops unusable events. The page reports repairs. The repaired score still has to pass playability checks and match requested hit counts. For an invalid score, it sends validation feedback back to that model for up to five attempts total. The gallery's **Local LLM** selector uses its own endpoint on port 8765 by default. Keep the model ID at `default_model` for these MLX servers so MLX selects the adapter loaded on port 8767. For other servers, set `LLM_BASE_URL` or `LLM_ADAPTER_URL` to change a comparison endpoint and `LLM_BASE_MODEL` or `LLM_ADAPTER_MODEL` if it requires a different model ID.
+
+Use `.groove-training/data-v2/test.jsonl` to evaluate the adapter on families held out from training. The procedural engine has the full catalog, including those families. For a fair head-to-head comparison, write a shared set of new prompts outside the catalog and measure exact-count accuracy, score validity, and how well each loop sounds. `--mask-prompt` trains on the score completion. See the [MLX LM fine-tuning guide](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/LORA.md).
 
 ## Checks
 
