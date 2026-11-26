@@ -177,10 +177,10 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	m.generateScore(w, r, request.Prompt)
+	m.generateScore(w, r, systemPrompt, request.Prompt)
 }
 
-func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, prompt string) {
+func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, instructions, prompt string) {
 	counts, _, err := parseHitCounts(prompt)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -192,7 +192,7 @@ func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, promp
 	var validationErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		w.Header().Set("X-Groove-Attempts", strconv.Itoa(attempt))
-		content, err := m.complete(ctx, userMessage)
+		content, err := m.complete(ctx, instructions, userMessage)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				writeError(w, http.StatusGatewayTimeout, "The local model timed out.")
@@ -216,7 +216,7 @@ func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, promp
 	writeError(w, http.StatusBadGateway, fmt.Sprintf("The local model returned an invalid score. Last validation error was %v.", validationErr))
 }
 
-func (m modelClient) complete(ctx context.Context, prompt string) (string, error) {
+func (m modelClient) complete(ctx context.Context, instructions, prompt string) (string, error) {
 	body := struct {
 		Model       string    `json:"model"`
 		Messages    []message `json:"messages"`
@@ -225,7 +225,7 @@ func (m modelClient) complete(ctx context.Context, prompt string) (string, error
 		Stream      bool      `json:"stream"`
 	}{
 		Model:       m.name,
-		Messages:    []message{{"system", systemPrompt}, {"user", prompt}},
+		Messages:    []message{{"system", instructions}, {"user", prompt}},
 		MaxTokens:   5500,
 		Temperature: 0.35,
 	}

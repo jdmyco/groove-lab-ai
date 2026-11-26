@@ -43,7 +43,16 @@ type Score struct {
 func parseScore(raw []byte) (Score, error) {
 	var score Score
 	if err := json.Unmarshal(raw, &score, json.RejectUnknownMembers(true)); err != nil {
-		return Score{}, errors.New("score must be one JSON object with the required fields")
+		detail := err.Error()
+		const maxDetail = 240
+		if len(detail) > maxDetail {
+			end := maxDetail
+			for !utf8.RuneStart(detail[end]) {
+				end--
+			}
+			detail = detail[:end] + "…"
+		}
+		return Score{}, fmt.Errorf("score must be one JSON object with the required fields: %s", detail)
 	}
 	if err := validateScore(score); err != nil {
 		return Score{}, err

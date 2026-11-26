@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestComparisonRoutesUseSeparateModels(t *testing.T) {
@@ -24,12 +25,15 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 				return
 			}
 			call := int(calls.Add(1))
-			if payload.Model != model || payload.Messages[0] != (message{"system", systemPrompt}) ||
+			if payload.Model != model || payload.Messages[0] != (message{"system", systemPrompt + "\n" + comparisonScoreExample}) ||
 				payload.Messages[1].Role != "user" || !strings.HasPrefix(payload.Messages[1].Content, prompt) {
 				t.Errorf("wrong model or prompt: %+v", payload)
 			}
 			if (call > 1) != strings.Contains(payload.Messages[1].Content, "Previous attempt failed validation") {
 				t.Errorf("wrong retry feedback on call %d", call)
+			}
+			if call == 2 && !strings.Contains(payload.Messages[1].Content, `unknown object member name "description"`) {
+				t.Errorf("missing the unexpected field in retry feedback: %s", payload.Messages[1].Content)
 			}
 			if call == 3 && !strings.Contains(payload.Messages[1].Content, "expected 1 kick hit, got 0") {
 				t.Errorf("missing count failure on retry: %s", payload.Messages[1].Content)
@@ -44,7 +48,8 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 	defer base.Close()
 	withoutKick := strings.Replace(validScore, `,{"tick":0,"instrument":"kick","velocity":110}`, "", 1)
 	louder := strings.Replace(validScore, `"velocity":110`, `"velocity":118`, 1)
-	adapted := stub("adapted-test", &adaptedCalls, "malformed", withoutKick, louder)
+	wrongShape := strings.Replace(validScore, `"bars":1`, `"description":"wrong location","bars":1`, 1)
+	adapted := stub("adapted-test", &adaptedCalls, wrongShape, withoutKick, louder)
 	defer adapted.Close()
 
 	mux := newHandler(modelClient{})
@@ -84,5 +89,15 @@ func TestComparisonRoutesUseSeparateModels(t *testing.T) {
 	mux.ServeHTTP(w, r)
 	if w.Code != http.StatusBadRequest || baseCalls.Load() != 1 {
 		t.Errorf("comparison endpoint accepted a procedural override: HTTP %d", w.Code)
+	}
+}
+
+func TestScoreDecodeFeedbackIsBounded(t *testing.T) {
+	unknown := `"` + strings.Repeat("é", 512) + `":1,"bars":1`
+	content := strings.Replace(validScore, `"bars":1`, unknown, 1)
+	_, err := parseScore([]byte(content))
+	if err == nil || !utf8.ValidString(err.Error()) || len(err.Error()) > 320 ||
+		!strings.Contains(err.Error(), "unknown object member") {
+		t.Fatalf("expected bounded score diagnostics, got %v", err)
 	}
 }
