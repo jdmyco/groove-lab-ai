@@ -152,14 +152,14 @@ func validateScore(score Score) error {
 		}
 		tick := *event.Tick
 		if tick < 0 || tick >= total {
-			return fmt.Errorf("event tick %d outside score; valid ticks are 0 through %d", tick, total-1)
+			return fmt.Errorf("event tick %d outside score. Valid ticks are 0 through %d. Playback already loops back to tick 0. Keep all requested hits inside this range", tick, total-1)
 		}
 		actual := tick + event.Offset
 		if event.Offset < -6 || event.Offset > 6 || actual < 0 || actual >= total {
 			return fmt.Errorf("offset at tick %d must be within ±6 and keep the hit inside the loop", tick)
 		}
 		if !allowedInstruments[event.Instrument] {
-			return fmt.Errorf("event at tick %d uses an unknown instrument", tick)
+			return fmt.Errorf("event at tick %d uses an unknown instrument. Choose a listed instrument. Use closed_hat or open_hat for stick hi-hat hits", tick)
 		}
 		if event.Velocity < 1 || event.Velocity > 127 {
 			return fmt.Errorf("invalid velocity %d", event.Velocity)
