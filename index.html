@@ -31,7 +31,8 @@
       font-size: 14px; font-weight: 600; color: var(--gl-accent);
       text-decoration: underline; text-underline-offset: 6px;
     }
-    .download { margin-left: auto; font-size: 13px; color: var(--gl-sub); text-underline-offset: 4px; }
+    .header-links { margin-left: auto; display: flex; gap: 8px 16px; flex-wrap: wrap; justify-content: end; }
+    .header-links a { font-size: 13px; color: var(--gl-sub); text-underline-offset: 4px; }
     .lab-layout {
       display: grid; gap: 18px 24px;
       grid-template: "compose panel" auto "library panel" 1fr / minmax(0, 1fr) minmax(420px, 500px);
@@ -119,7 +120,10 @@
   <header class="app-header">
     <div class="brand"><span class="brand-bop">Groove</span> <span class="brand-kit">Lab</span></div>
     <span class="header-label">Grooves</span>
-    <a class="download" href="/training/train.jsonl" download="train.jsonl">Download training JSONL</a>
+    <nav class="header-links" aria-label="Groove Lab">
+      <a href="/compare">Compare models</a>
+      <a href="/training/train.jsonl" download="train.jsonl">Download training JSONL</a>
+    </nav>
   </header>
   <main class="gl lab-layout">
     <section class="composer" aria-labelledby="composer-title">

@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,14 +52,28 @@ func main() {
 		log.Fatal(err)
 	}
 	port := env("PORT", "8080")
+	client := &http.Client{Timeout: 90 * time.Second}
 	model := modelClient{
 		url:    env("LLM_URL", "http://127.0.0.1:8765/v1/chat/completions"),
 		name:   env("LLM_MODEL", "default_model"),
-		client: &http.Client{Timeout: 90 * time.Second},
+		client: client,
 	}
+	handler := newHandler(model)
+	registerComparison(handler,
+		modelClient{
+			url:    env("LLM_BASE_URL", "http://127.0.0.1:8766/v1/chat/completions"),
+			name:   env("LLM_BASE_MODEL", "default_model"),
+			client: client,
+		},
+		modelClient{
+			url:    env("LLM_ADAPTER_URL", "http://127.0.0.1:8767/v1/chat/completions"),
+			name:   env("LLM_ADAPTER_MODEL", "default_model"),
+			client: client,
+		},
+	)
 	server := &http.Server{
 		Addr:              "127.0.0.1:" + port,
-		Handler:           loopbackOnly(newHandler(model)),
+		Handler:           loopbackOnly(handler),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      185 * time.Second,
@@ -88,7 +103,7 @@ func loopbackOnly(next http.Handler) http.Handler {
 	})
 }
 
-func newHandler(model modelClient) http.Handler {
+func newHandler(model modelClient) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -108,11 +123,18 @@ func newHandler(model modelClient) http.Handler {
 	return mux
 }
 
-func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
+type generationRequest struct {
+	Prompt    string `json:"prompt"`
+	Engine    string `json:"engine"`
+	BaseScore *Score `json:"base_score"`
+}
+
+func readGenerationRequest(w http.ResponseWriter, r *http.Request) (generationRequest, bool) {
+	var request generationRequest
 	kind, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if kind != "application/json" {
 		writeError(w, http.StatusUnsupportedMediaType, "Send the prompt as application/json.")
-		return
+		return request, false
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
 	if err != nil {
@@ -122,26 +144,28 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		} else {
 			writeError(w, http.StatusBadRequest, "The request body could not be read.")
 		}
-		return
-	}
-	var request struct {
-		Prompt    string `json:"prompt"`
-		Engine    string `json:"engine"`
-		BaseScore *Score `json:"base_score"`
+		return request, false
 	}
 	if err := json.Unmarshal(body, &request, json.RejectUnknownMembers(true)); err != nil {
 		writeError(w, http.StatusBadRequest, "Send an object with a prompt string.")
-		return
+		return request, false
 	}
-	prompt := strings.TrimSpace(request.Prompt)
-	if prompt == "" || utf8.RuneCountInString(prompt) > 1000 {
+	request.Prompt = strings.TrimSpace(request.Prompt)
+	if request.Prompt == "" || utf8.RuneCountInString(request.Prompt) > 1000 {
 		writeError(w, http.StatusBadRequest, "Enter a prompt of 1–1,000 characters.")
+		return request, false
+	}
+	return request, true
+}
+
+func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
+	request, ok := readGenerationRequest(w, r)
+	if !ok {
 		return
 	}
-
 	switch request.Engine {
 	case "procedural":
-		serveProcedural(w, prompt, request.BaseScore)
+		serveProcedural(w, request.Prompt, request.BaseScore)
 		return
 	case "", "llm":
 		if request.BaseScore != nil {
@@ -153,6 +177,10 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	m.generateScore(w, r, request.Prompt)
+}
+
+func (m modelClient) generateScore(w http.ResponseWriter, r *http.Request, prompt string) {
 	counts, _, err := parseHitCounts(prompt)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
@@ -161,13 +189,15 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
 	userMessage := prompt
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	var validationErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		w.Header().Set("X-Groove-Attempts", strconv.Itoa(attempt))
 		content, err := m.complete(ctx, userMessage)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) {
 				writeError(w, http.StatusGatewayTimeout, "The local model timed out.")
 			} else {
-				writeError(w, http.StatusServiceUnavailable, "The local model is unavailable. Check that it is running and LLM_URL and LLM_MODEL match.")
+				writeError(w, http.StatusServiceUnavailable, "The local model is unavailable. Check that it is running and the configured model URL and name match.")
 			}
 			return
 		}
@@ -180,9 +210,10 @@ func (m modelClient) handleGenerate(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, score)
 			return
 		}
+		validationErr = err
 		userMessage = fmt.Sprintf("%s\n\nPrevious attempt failed validation: %s. Return the complete corrected score.", prompt, err)
 	}
-	writeError(w, http.StatusBadGateway, "The local model returned an invalid score after 3 attempts.")
+	writeError(w, http.StatusBadGateway, fmt.Sprintf("The local model returned an invalid score. Last validation error was %v.", validationErr))
 }
 
 func (m modelClient) complete(ctx context.Context, prompt string) (string, error) {
